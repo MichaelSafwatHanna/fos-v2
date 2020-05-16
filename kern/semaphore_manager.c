@@ -9,25 +9,6 @@
 #include <kern/sched.h>
 #include <kern/kheap.h>
 
-//==================================================================================//
-//============================== HELPER FUNCTIONS ==================================//
-//==================================================================================//
-//Helper functions to deal with the semaphore queue
-//void enqueue(struct Env_Queue* queue, struct Env* env);
-//struct Env* dequeue(struct Env_Queue* queue);
-
-///// Helper Functions
-//void enqueue(struct Env_Queue* queue, struct Env* env)
-//{
-//	LIST_INSERT_HEAD(queue, env);
-//}
-//
-//struct Env* dequeue(struct Env_Queue* queue)
-//{
-//	struct Env* envItem = LIST_LAST(queue);
-//	LIST_REMOVE(queue, envItem);
-//	return envItem;
-//}
 
 //==================================================================================//
 //============================== GIVEN FUNCTIONS ===================================//
@@ -40,17 +21,20 @@
 //initialize the "semaphores" array by 0's and empty = 1
 void create_semaphores_array(uint32 numOfSemaphores)
 {
-	/*semaphores = (struct Semaphore*) kmalloc(numOfSemaphores*sizeof(struct Semaphore));
+#if USE_KHEAP
+	MAX_SEMAPHORES = numOfSemaphores ;
+	semaphores = (struct Semaphore*) kmalloc(numOfSemaphores*sizeof(struct Semaphore));
 	if (semaphores == NULL)
 	{
 		panic("Kernel runs out of memory\nCan't create the array of semaphores.");
 	}
+#endif
 	for (int i = 0; i < MAX_SEMAPHORES; ++i)
 	{
 		memset(&(semaphores[i]), 0, sizeof(struct Semaphore));
 		semaphores[i].empty = 1;
 		LIST_INIT(&(semaphores[i].env_queue));
-	}*/
+	}
 }
 
 
@@ -65,7 +49,6 @@ void create_semaphores_array(uint32 numOfSemaphores)
 //	b) E_NO_SEMAPHORE if the the array of semaphores is full (i.e. reaches "MAX_SEMAPHORES")
 int allocate_semaphore_object(struct Semaphore **allocatedObject)
 {
-	/*
 	int32 semaphoreObjectID = -1 ;
 	for (int i = 0; i < MAX_SEMAPHORES; ++i)
 	{
@@ -79,7 +62,7 @@ int allocate_semaphore_object(struct Semaphore **allocatedObject)
 	if (semaphoreObjectID == -1)
 	{
 		//try to double the size of the "semaphores" array
-		if (USE_KHEAP == 1)
+		#if USE_KHEAP
 		{
 			semaphores = (struct Semaphore*) krealloc(semaphores, 2*MAX_SEMAPHORES);
 			if (semaphores == NULL)
@@ -93,18 +76,19 @@ int allocate_semaphore_object(struct Semaphore **allocatedObject)
 				MAX_SEMAPHORES *= 2;
 			}
 		}
-		else
+		#else
 		{
+			panic("Attempt to dynamically allocate space inside kernel while kheap is disabled .. ");
 			*allocatedObject = NULL;
 			return E_NO_SEMAPHORE;
 		}
+		#endif
 	}
 
 	*allocatedObject = &(semaphores[semaphoreObjectID]);
 	semaphores[semaphoreObjectID].empty = 0;
 
-	return semaphoreObjectID;*/
-	return 0;
+	return semaphoreObjectID;
 }
 
 //======================
@@ -158,9 +142,10 @@ int free_semaphore_object(uint32 semaphoreObjectID)
 //======================
 int createSemaphore(int32 ownerEnvID, char* semaphoreName, uint32 initialValue)
 {
-	//TODO: [PROJECT 2019 - MS1 - [4] Semaphore] CreateSemaphore
-	// your code is here, remove the panic and write your code
+	// Write your code here, remove the panic and write your code
 	panic("createSemaphore() is not implemented yet...!!");
+
+	//refer to the documentation for details
 
 	//create new semaphore object and initialize it by the given info (ownerID, name, value)
 	//Return:
@@ -177,9 +162,10 @@ int createSemaphore(int32 ownerEnvID, char* semaphoreName, uint32 initialValue)
 //============
 void waitSemaphore(int32 ownerEnvID, char* semaphoreName)
 {
-	//TODO: [PROJECT 2019 - MS1 - [4] Semaphore] WAIT
-	// your code is here, remove the panic and write your code
+	// Write your code here, remove the panic and write your code
 	panic("waitSemaphore() is not implemented yet...!!");
+
+	//refer to the documentation for details
 
 	struct Env* myenv = curenv; //The calling environment
 
@@ -187,12 +173,10 @@ void waitSemaphore(int32 ownerEnvID, char* semaphoreName)
 	//	1) Get the Semaphore
 	//	2) Decrement its value
 	//	3) If negative, block the calling environment "myenv", by
-	//		a) removing it from ready queue		[refer to helper functions in doc]
-	//		b) adding it to semaphore queue		[refer to helper functions in doc]
-	//		c) changing its status to ENV_BLOCKED
-	//		d) set curenv with NULL
+	//		a) adding it to semaphore queue		[refer to helper functions in doc]
+	//		b) changing its status to ENV_BLOCKED
+	//		c) set curenv with NULL
 	//	4) Call "fos_scheduler()" to continue running the remaining envs
-
 }
 
 //==============
@@ -200,9 +184,10 @@ void waitSemaphore(int32 ownerEnvID, char* semaphoreName)
 //==============
 void signalSemaphore(int ownerEnvID, char* semaphoreName)
 {
-	//TODO: [PROJECT 2019 - MS1 - [4] Semaphore] SIGNAL
-	// your code is here, remove the panic and write your code
+	// Write your code here, remove the panic and write your code
 	panic("signalSemaphore() is not implemented yet...!!");
+
+	//refer to the documentation for details
 
 	// Steps:
 	//	1) Get the Semaphore
@@ -211,6 +196,5 @@ void signalSemaphore(int ownerEnvID, char* semaphoreName)
 	//		a) removing it from semaphore queue		[refer to helper functions in doc]
 	//		b) adding it to ready queue				[refer to helper functions in doc]
 	//		c) changing its status to ENV_READY
-
 }
 

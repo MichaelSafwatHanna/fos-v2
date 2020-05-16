@@ -128,17 +128,17 @@ void check_boot_pgdir()
 
 	//2016
 	// check phys mem
-	if(USE_KHEAP)
+	#if USE_KHEAP
 	{
 		for (i = 0; KERNEL_BASE + i < (uint32)ptr_free_mem; i += PAGE_SIZE)
 			assert(check_va2pa(ptr_page_directory, KERNEL_BASE + i) == i);
 	}
-	else
+	#else
 	{
 		for (i = 0; KERNEL_BASE + i != 0; i += PAGE_SIZE)
 			assert(check_va2pa(ptr_page_directory, KERNEL_BASE + i) == i);
 	}
-
+	#endif
 	// check kernel stack
 	for (i = 0; i < KERNEL_STACK_SIZE; i += PAGE_SIZE)
 		assert(check_va2pa(ptr_page_directory, KERNEL_STACK_TOP - KERNEL_STACK_SIZE + i) == STATIC_KERNEL_PHYSICAL_ADDRESS(ptr_stack_bottom) + i);

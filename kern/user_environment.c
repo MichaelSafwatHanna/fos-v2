@@ -16,10 +16,15 @@
 #include <kern/sched.h>
 #include <kern/kheap.h>
 #include <inc/queue.h>
+#include <kern/shared_memory_manager.h>
+#include <kern/semaphore_manager.h>
 
 extern int pf_add_env_page(struct Env* ptr_env, uint32 virtual_address, void* ptrDataSrc);
 extern int loadtime_map_frame(uint32 *ptr_page_directory, struct Frame_Info *ptr_frame_info, void *virtual_address, int perm);
 extern void addTableToTableWorkingSet(struct Env *e, uint32 tableAddress);
+
+//2020
+extern void print_page_working_set_or_LRUlists(struct Env *e);
 
 struct Env* envs = NULL;		// All environments
 struct Env* curenv = NULL;	        // The current env
@@ -65,20 +70,107 @@ void set_environment_entry_point(struct Env* e, uint8* ptr_program_start);
 /// To add FOS support for new user program, just add the appropriate lines like below
 
 //The input for any DECLARE_START_OF macro must be the ".c" filename of the user program
-DECLARE_START_OF(tst_page_replacement_alloc);
-DECLARE_START_OF(tst_page_replacement_FIFO_1);
-DECLARE_START_OF(tst_buffer_1);
-DECLARE_START_OF(tst_buffer_2);
-DECLARE_START_OF(tst_buffer_2_slave);
+DECLARE_START_OF(fos_helloWorld)
+DECLARE_START_OF(fos_add)
+DECLARE_START_OF(fos_alloc)
+DECLARE_START_OF(fos_input)
+DECLARE_START_OF(game)
+DECLARE_START_OF(fos_static_data_section)
+DECLARE_START_OF(fos_data_on_stack)
+DECLARE_START_OF(quicksort_heap)
+
+//2012
+DECLARE_START_OF(fos_fibonacci)
+DECLARE_START_OF(fos_factorial)
+DECLARE_START_OF(quicksort4)
+DECLARE_START_OF(quicksort5)
+DECLARE_START_OF(tst_quicksort_freeHeap)
+
+//2015
+DECLARE_START_OF(tst_free_1);
+DECLARE_START_OF(tst_free_2);
+DECLARE_START_OF(tst_malloc_1);
+DECLARE_START_OF(tst_malloc_2);
+DECLARE_START_OF(tst_malloc_3);
+DECLARE_START_OF(tst_first_fit_1);
+DECLARE_START_OF(tst_first_fit_2);
+DECLARE_START_OF(heap_program);
+DECLARE_START_OF(tst_invalid_access);
+DECLARE_START_OF(mergesort_leakage);
+DECLARE_START_OF(mergesort_noleakage);
+DECLARE_START_OF(quicksort_noleakage);
+
+DECLARE_START_OF(tst_placement)
+DECLARE_START_OF(tst_invalid_access)
+DECLARE_START_OF(tst_quicksort_freeHeap)
+
+//2015
+DECLARE_START_OF(tst_free_1);
+DECLARE_START_OF(tst_free_2);
+DECLARE_START_OF(tst_malloc_1);
+DECLARE_START_OF(tst_malloc_2);
+DECLARE_START_OF(tst_malloc_3);
+DECLARE_START_OF(tst_best_fit_1);
+DECLARE_START_OF(tst_best_fit_2);
+DECLARE_START_OF(tst_first_fit_1);
+DECLARE_START_OF(tst_first_fit_2);
+DECLARE_START_OF(heap_program);
+
+DECLARE_START_OF(mergesort_leakage);
+DECLARE_START_OF(mergesort_noleakage);
+DECLARE_START_OF(quicksort_noleakage);
 
 //User Programs Table
 //The input for any PTR_START_OF macro must be the ".c" filename of the user program
 struct UserProgramInfo userPrograms[] = {
-		{ "tpr1", "Tests page replacement (allocation of Memory and PageFile)", PTR_START_OF(tst_page_replacement_alloc)},
-		{ "tfifo1", "Tests page replacement (FIFO algorithm 1)", PTR_START_OF(tst_page_replacement_FIFO_1)},
-		{ "tpb1", "tests page buffering and un-buffering during replacement", PTR_START_OF(tst_buffer_1)},
-		{ "tpb2", "tests freeing modified list when it reaches MAX size", PTR_START_OF(tst_buffer_2)},
-		{ "tpb2slave", "Slave program for tbf2", PTR_START_OF(tst_buffer_2_slave)},
+		{ "fos_helloWorld", "Created by FOS team, fos@nowhere.com", PTR_START_OF(fos_helloWorld)},
+		{ "fos_add", "Created by FOS team, fos@nowhere.com", PTR_START_OF(fos_add)},
+		{ "fos_alloc", "Created by FOS team, fos@nowhere.com", PTR_START_OF(fos_alloc)},
+		{ "fos_input", "Created by FOS team, fos@nowhere.com", PTR_START_OF(fos_input)},
+		{ "fos_game", "Created by FOS team, fos@nowhere.com", PTR_START_OF(game)},
+		{ "fos_static_data_section", "Created by FOS team, fos@nowhere.com", PTR_START_OF(fos_static_data_section)},
+		{ "fos_data_on_stack", "Created by FOS team, fos@nowhere.com", PTR_START_OF(fos_data_on_stack)},
+
+		/*TESTING 2020*/
+		//[1] READY MADE TESTS
+		//PAGE FAULT HANDLER TESTS [PLACEMENT + REPLACEMENT]
+		{ "tpp", "Tests the Page placement", PTR_START_OF(tst_placement)},
+		{ "tia", "tests handling of invalid memory access", PTR_START_OF(tst_invalid_access)},
+
+		//USER DYNAMIC ALLOCATION USING LARGE SIZES
+		{ "tm1", "tests malloc (1): start address & allocated frames", PTR_START_OF(tst_malloc_1)},
+		{ "tm2", "tests malloc (2): writing & reading values in allocated spaces", PTR_START_OF(tst_malloc_2)},
+		{ "tm3", "tests malloc (3): check memory allocation and WS after accessing", PTR_START_OF(tst_malloc_3)},
+		//USER DYNAMIC DEALLOCATION USING LARGE SIZES
+		{ "tf1", "tests free (1): freeing tables, WS and page file [placement case]", PTR_START_OF(tst_free_1)},
+		{ "tf2", "tests free (2): try accessing values in freed spaces", PTR_START_OF(tst_free_2)},
+		//FIRST FIT for LARGE SIZES ALLOCATIONS
+		{ "tff1", "tests first fit (1): always find suitable space", PTR_START_OF(tst_first_fit_1)},
+		{ "tff2", "tests first fit (2): no suitable space", PTR_START_OF(tst_first_fit_2)},
+
+		//BEST FIT for LARGE SIZES ALLOCATIONS
+		{ "tbf1", "tests best fit (1): always find suitable space", PTR_START_OF(tst_best_fit_1)},
+		{ "tbf2", "tests best fit (2): no suitable space", PTR_START_OF(tst_best_fit_2)},
+
+
+		//[2] PROGRAMS
+		{ "tqsfh", "Quicksort with freeHeap", PTR_START_OF(tst_quicksort_freeHeap)},
+		{ "fact", "Factorial Recursive", PTR_START_OF(fos_factorial)},
+		{ "fib", "Fibonacci Recursive", PTR_START_OF(fos_fibonacci)},
+		{ "tqs", "Quicksort that cause memory leakage", PTR_START_OF(quicksort_heap)},
+		{ "qs", "Quicksort with NO memory leakage", PTR_START_OF(quicksort_noleakage)},
+		{ "msnoleak", "Mergesort with NO memory leakage", PTR_START_OF(mergesort_noleakage)},
+		{ "msleak", "Mergesort that cause memory leakage", PTR_START_OF(mergesort_leakage)},
+
+
+		/*TESTING 2016*/
+		{ "hp", "heap program (allocate and free from heap)", PTR_START_OF(heap_program)},
+
+		//[2] PROGRAMS
+		//		{ "tqsfh", "Quicksort with freeHeap", PTR_START_OF(tst_quicksort_freeHeap)},
+		{ "qs4", "Quicksort v.4", PTR_START_OF(quicksort4)},
+		{ "qs5", "Quicksort v.5", PTR_START_OF(quicksort5)},
+
 };
 
 ///=========================================================
@@ -113,44 +205,22 @@ void free_environment(struct Env* e)
 }
 
 
-void * create_user_page_WS(unsigned int numOfElements)
+void * create_user_page_WS(struct Env * e, unsigned int numOfElements)
 {
-	//Use kmalloc() to allocate a new space for a working set with numOfElements elements
-	uint32 nBytes = sizeof(struct ResidentSetElement) * numOfElements;
-	return kmalloc(nBytes);
+	panic("this function is not required...!!");
+	return NULL;
 }
 
 
 void * create_user_directory()
 {
-	//Use kmalloc() to allocate a new directory
-	if(USE_KHEAP)
-	{
-		uint32* ptr_user_page_directory = (void *)kmalloc(PAGE_SIZE);
-		if(ptr_user_page_directory == NULL)
-		{
-			panic("NOT ENOUGH KERNEL HEAP SPACE");
-		}
-		return ptr_user_page_directory;
-	}
-	else
-	{
-		int r;
-		struct Frame_Info *p = NULL;
-
-		allocate_frame(&p) ;
-		p->references = 1;
-
-		uint32* ptr_user_page_directory = STATIC_KERNEL_VIRTUAL_ADDRESS(to_physical_address(p));
-		uint32 phys_user_page_directory = to_physical_address(p);
-		return ptr_user_page_directory;
-	}
+	panic("this function is not required...!!");
+	return NULL;
 }
 
 void ShareWSAtUserSpace(struct Env* e)
 {
-	/*e->__uptr_pws = (struct WorkingSetElement*) USER_PAGES_WS_START;
-	e->ptr_pageWorkingSet = create_user_page_WS(e->page_WS_max_size);
+	e->__uptr_pws = (struct WorkingSetElement*) USER_PAGES_WS_START;
 	unsigned int sva = (unsigned int) e->ptr_pageWorkingSet;
 	uint32 nBytes = sizeof(struct WorkingSetElement) * e->page_WS_max_size;
 	unsigned int dva = (unsigned int) (e->__uptr_pws);
@@ -166,7 +236,7 @@ void ShareWSAtUserSpace(struct Env* e)
 			ptr_page_table = create_page_table(e->env_page_directory, (uint32) dva);
 		}
 		ptr_page_table[PTX(dva)] = CONSTRUCT_ENTRY(pa, PERM_USER | PERM_PRESENT);
-	}*/
+	}
 }
 
 //
@@ -200,30 +270,51 @@ void initialize_environment(struct Env* e, uint32* ptr_user_page_directory
 	// Allocate the page working set for both kernel and user
 #if USE_KHEAP == 1
 	{
+		e->ptr_pageWorkingSet = create_user_page_WS(e, e->page_WS_max_size);
 		ShareWSAtUserSpace(e);
 	}
 #else
 	{
 		uint32 env_index = (uint32)(e-envs);
-		e->__uptr_pws = (struct ResidentSetElement*)
-						( ((struct Env*)(UENVS+sizeof(struct Env)*env_index))->ptr_pageResidentSet );
+		e->__uptr_pws = (struct WorkingSetElement*)
+						( ((struct Env*)(UENVS+sizeof(struct Env)*env_index))->ptr_pageWorkingSet );
 	}
 #endif
+
+
+	//2020
+	// Add its elements to the "e->PageWorkingSetList"
+	if(isPageReplacmentAlgorithmLRULists())
+	{
+		for (int i = 0; i < e->page_WS_max_size; ++i)
+		{
+			LIST_INSERT_HEAD(&(e->PageWorkingSetList), &(e->ptr_pageWorkingSet[i]));
+		}
+	}
+	//initialize environment shared variables [BONUS]
+	/*e->sharing_variables_max_size = PAGE_SIZE/sizeof(struct SharingVarInfo);
+	e->ptr_sharing_variables = kmalloc(PAGE_SIZE);
+	for(i = 0; i < e->sharing_variables_max_size; i++)
+	{
+		e->ptr_sharing_variables[i].start_va = 0;
+		e->ptr_sharing_variables[i].size = 0;
+		e->ptr_sharing_variables[i].owner_flag = -1;
+		e->ptr_sharing_variables[i].id_in_shares_array = -1;
+	}*/
 
 	//initialize environment working set
 	for(i=0; i< (e->page_WS_max_size); i++)
 	{
-		e->ptr_pageResidentSet[i].virtual_address = 0;
-		e->ptr_pageResidentSet[i].empty = 1;
-		e->ptr_pageResidentSet[i].time_stamp = 0 ;
+		e->ptr_pageWorkingSet[i].virtual_address = 0;
+		e->ptr_pageWorkingSet[i].empty = 1;
+		e->ptr_pageWorkingSet[i].time_stamp = 0 ;
 	}
-	e->page_last_RS_index = 0;
+	e->page_last_WS_index = 0;
 
 	for(i=0; i< __TWS_MAX_SIZE; i++)
 	{
 		e->__ptr_tws[i].virtual_address = 0;
 		e->__ptr_tws[i].empty = 1;
-		e->__ptr_tws[i].time_stamp = 0 ;
 	}
 
 	e->table_last_WS_index = 0;
@@ -236,8 +327,12 @@ void initialize_environment(struct Env* e, uint32* ptr_user_page_directory
 
 	e->nModifiedPages=0;
 	e->nNotModifiedPages=0;
-
 	e->nClocks = 0;
+
+	//2020
+	e->nPageIn = 0;
+	e->nPageOut = 0;
+	e->nNewPageAdded = 0;
 	//e->shared_free_address = USER_SHARED_MEM_START;
 
 	//Completes other environment initializations, (envID, status and most of registers)
@@ -266,8 +361,13 @@ static int program_segment_alloc_map_copy_workingset(struct Env *e, struct Progr
 
 	*allocated_pages = 0;
 	/*2015*/// Load max of 6 pages only for the segment that start with va = 200000 [EXCEPT tpp]
-	if (iVA == 0x200000 && strcmp(e->prog_name, "tpp")!=0)
-		remaining_ws_pages = remaining_ws_pages < 6 ? remaining_ws_pages:6 ;
+	if (iVA == 0x200000)
+	{
+		if (strcmp(e->prog_name, "tpp")!=0)
+			remaining_ws_pages = remaining_ws_pages < 6 ? remaining_ws_pages:6 ;
+		else
+			remaining_ws_pages = remaining_ws_pages < 7 ? remaining_ws_pages:7 ;
+	}
 	/*==========================================================================================*/
 	for (; iVA < end_vaddr && i<remaining_ws_pages; i++, iVA += PAGE_SIZE)
 	{
@@ -278,14 +378,31 @@ static int program_segment_alloc_map_copy_workingset(struct Env *e, struct Progr
 		loadtime_map_frame(e->env_page_directory, p, (void *)iVA, PERM_USER | PERM_WRITEABLE);
 		LOG_STRING("segment page mapped");
 
-		LOG_STATMENT(cprintf("Updating working set entry # %d",e->page_last_RS_index));
+		LOG_STATMENT(cprintf("Updating working set entry # %d",e->page_last_WS_index));
 
-		e->ptr_pageResidentSet[e->page_last_RS_index].virtual_address = iVA;
-		e->ptr_pageResidentSet[e->page_last_RS_index].empty = 0;
-		e->ptr_pageResidentSet[e->page_last_RS_index].time_stamp = 0;
+		e->ptr_pageWorkingSet[e->page_last_WS_index].virtual_address = iVA;
+		e->ptr_pageWorkingSet[e->page_last_WS_index].empty = 0;
+		e->ptr_pageWorkingSet[e->page_last_WS_index].time_stamp = 0;
 
-		e->page_last_RS_index ++;
-		e->page_last_RS_index %= (e->page_WS_max_size);
+
+		//2020
+		if (isPageReplacmentAlgorithmLRULists())
+		{
+			LIST_REMOVE(&(e->PageWorkingSetList), &(e->ptr_pageWorkingSet[e->page_last_WS_index]));
+			//Always leave 1 page in Active list for the stack
+			if (LIST_SIZE(&(e->ActiveList)) < e->ActiveListSize - 1)
+			{
+				LIST_INSERT_HEAD(&(e->ActiveList), &(e->ptr_pageWorkingSet[e->page_last_WS_index]));
+			}
+			else
+			{
+				//Add to LRU Second list
+				LIST_INSERT_HEAD(&(e->SecondList), &(e->ptr_pageWorkingSet[e->page_last_WS_index]));
+			}
+		}
+		//=======================
+		e->page_last_WS_index ++;
+		e->page_last_WS_index %= (e->page_WS_max_size);
 
 		//if a new table is created during the mapping, add it to the table working set
 		if(PDX(iVA) != (*lastTableNumber))
@@ -321,6 +438,7 @@ static int program_segment_alloc_map_copy_workingset(struct Env *e, struct Progr
 		dst_ptr++ ;
 	}
 
+
 	//============================================
 
 	//	LOG_STRING("creating page tables");
@@ -336,7 +454,7 @@ static int program_segment_alloc_map_copy_workingset(struct Env *e, struct Progr
 }
 
 // Allocates a new env and loads the named user program into it.
-struct Env* env_create(char* user_program_name, unsigned int page_WS_size, unsigned int percent_WS_pages_to_remove)
+struct Env* env_create(char* user_program_name, unsigned int page_WS_size, unsigned int LRU_second_list_size, unsigned int percent_WS_pages_to_remove)
 {
 	//[1] get pointer to the start of the "user_program_name" program in memory
 	// Hint: use "get_user_program_info" function,
@@ -376,12 +494,12 @@ struct Env* env_create(char* user_program_name, unsigned int page_WS_size, unsig
 	//REMEMBER: "allocate_frame" should always return a free frame
 	uint32* ptr_user_page_directory;
 	unsigned int phys_user_page_directory;
-	if(USE_KHEAP)
+#if USE_KHEAP
 	{
 		ptr_user_page_directory = create_user_directory();
 		phys_user_page_directory = kheap_physical_address((uint32)ptr_user_page_directory);
 	}
-	else
+#else
 	{
 		int r;
 		struct Frame_Info *p = NULL;
@@ -392,12 +510,19 @@ struct Env* env_create(char* user_program_name, unsigned int page_WS_size, unsig
 		ptr_user_page_directory = STATIC_KERNEL_VIRTUAL_ADDRESS(to_physical_address(p));
 		phys_user_page_directory = to_physical_address(p);
 	}
-
+#endif
 	//[4] initialize the new environment by the virtual address of the page directory
 	// Hint: use "initialize_environment" function
 
 	//2016
 	e->page_WS_max_size = page_WS_size;
+
+	//2020
+	if(isPageReplacmentAlgorithmLRULists())
+	{
+		e->SecondListSize = LRU_second_list_size;
+		e->ActiveListSize = page_WS_size - LRU_second_list_size;
+	}
 
 	//2018
 	if (percent_WS_pages_to_remove == 0)	// If not entered as input, 0 as default value
@@ -516,9 +641,9 @@ struct Env* env_create(char* user_program_name, unsigned int page_WS_size, unsig
 	int i=0;
 	for(;i<(e->page_WS_max_size); i++)
 	{
-		if(e->ptr_pageResidentSet[i].empty == 0)
+		if(e->ptr_pageWorkingSet[i].empty == 0)
 		{
-			uint32 virtual_address = e->ptr_pageResidentSet[i].virtual_address;
+			uint32 virtual_address = e->ptr_pageWorkingSet[i].virtual_address;
 			uint32* ptr_page_table;
 
 			//Here, page tables of all working set pages should be exist in memory
@@ -539,6 +664,8 @@ struct Env* env_create(char* user_program_name, unsigned int page_WS_size, unsig
 	// at virtual address USTACKTOP - PAGE_SIZE.
 	// we assume that the stack is counted in the environment working set
 
+	//2020
+	e->initNumStackPages = 1 ;
 
 	// map the allocated page
 	uint32 ptr_user_stack_bottom = (USTACKTOP - 1*PAGE_SIZE);
@@ -556,9 +683,28 @@ struct Env* env_create(char* user_program_name, unsigned int page_WS_size, unsig
 
 		//now add it to the working set and the page table
 		{
-			e->ptr_pageResidentSet[e->page_last_RS_index].virtual_address = (uint32) stackVa;
-			e->page_last_RS_index ++;
-			e->page_last_RS_index %= (e->page_WS_max_size);
+			//env_page_ws_set_entry(e, e->page_last_WS_index, (uint32) stackVa) ;
+			e->ptr_pageWorkingSet[e->page_last_WS_index].virtual_address = ROUNDDOWN(stackVa,PAGE_SIZE);
+			e->ptr_pageWorkingSet[e->page_last_WS_index].empty = 0;
+			env_page_ws_set_time_stamp(e, e->page_last_WS_index);
+
+			//2020
+			if(isPageReplacmentAlgorithmLRULists())
+			{
+				LIST_REMOVE(&(e->PageWorkingSetList), &(e->ptr_pageWorkingSet[e->page_last_WS_index]));
+				//Now: we are sure that at least the top page in the stack will be added to Active list
+				//Since we left 1 empty location in the Active list when we loaded the program segments
+				if (LIST_SIZE(&(e->ActiveList)) < e->ActiveListSize)
+				{
+					LIST_INSERT_HEAD(&(e->ActiveList), &(e->ptr_pageWorkingSet[e->page_last_WS_index]));
+				}
+				else
+				{
+					LIST_INSERT_HEAD(&(e->SecondList), &(e->ptr_pageWorkingSet[e->page_last_WS_index]));
+				}
+			}
+			e->page_last_WS_index ++;
+			e->page_last_WS_index %= (e->page_WS_max_size);
 
 			//addTableToTableWorkingSet(e, ROUNDDOWN((uint32)stackVa, PAGE_SIZE*1024));
 
@@ -568,12 +714,29 @@ struct Env* env_create(char* user_program_name, unsigned int page_WS_size, unsig
 
 	}
 
+	//2020
+	//LRU Lists: Reset PRESENT bit of all pages in Second List
+	if (isPageReplacmentAlgorithmLRULists())
+	{
+		struct WorkingSetElement * elm = NULL;
+		LIST_FOREACH(elm, &(e->SecondList))
+		{
+			//set it's PRESENT bit to 0
+			//pt_set_page_permissions(e, elm->virtual_address, 0, PERM_PRESENT);
+			uint32 *ptr_table = NULL;
+			get_page_table(e->env_page_directory,(void*) elm->virtual_address, &ptr_table);
+			ptr_table[PTX(elm->virtual_address)] &= ~PERM_PRESENT;
+
+		}
+	}
+
 	//		cprintf("Table working set after loading the program...\n");
 	//		env_table_ws_print(e);
 	//
 	//
-	//	cprintf("Page working set after loading the program...\n");
-	//	env_page_ws_print(e);
+
+	//cprintf("Page working set after loading the program...\n");
+	//print_page_working_set_or_LRUlists(e);
 
 	///[10] switch back to the page directory exists before segment loading
 	lcr3(kern_phys_pgdir) ;
@@ -609,9 +772,9 @@ void env_run(struct Env *e)
 
 void __remove_pws_user_pages(struct Env *e)
 {
-	if(USE_KHEAP)
+#if USE_KHEAP
 	{
-		uint32 nBytes = sizeof(struct ResidentSetElement) * e->page_WS_max_size;
+		uint32 nBytes = sizeof(struct WorkingSetElement) * e->page_WS_max_size;
 		unsigned int sva = (unsigned int) e->__uptr_pws;
 		for(; sva < ((unsigned int) (e->__uptr_pws) + nBytes) ; sva+=PAGE_SIZE)
 		{
@@ -629,6 +792,9 @@ void __remove_pws_user_pages(struct Env *e)
 		}
 		tlbflush();
 	}
+#else
+	panic("kernel heap is disabled.");
+#endif
 }
 //
 // Frees environment "e" and all memory it uses.
@@ -651,36 +817,29 @@ void start_env_free(struct Env *e)
 
 void env_free(struct Env *e)
 {
-	panic("This function is not required.");
+	__remove_pws_user_pages(e);
+
+	//YOUR CODE STARTS HERE, remove the panic and write your code ----
+	panic("this function is not required...!!");
+
+	// [1] Free the pages in the PAGE working set from the main memory
+	// [2] Free LRU lists
+	// [3] Free all TABLES from the main memory
+	// [4] Free the page DIRECTORY from the main memory
+
+	//YOUR CODE ENDS HERE --------------------------------------------
+
+	//Don't change these lines:
+	pf_free_env(e); /*(ALREADY DONE for you)*/ // (removes all of the program pages from the page file)
+	free_environment(e); /*(ALREADY DONE for you)*/ // (frees the environment (returns it back to the free environment list))
 }
 
 void __env_free_with_buffering(struct Env *e)
 {
 	__remove_pws_user_pages(e);
 
-	//TODO: [PROJECT 2019 - BONUS5] Exit [env_free()]
-
-	//YOUR CODE STARTS HERE, remove the panic and write your code ----
-	//panic("env_free() is not implemented yet...!!");
-
-	// [1] Un-buffer any BUFFERED page belong to this environment from the free/modified lists
-	// [2] Free the pages in the PAGE working set from the main memory
-	// [3] Free the PAGE working set array itself from the main memory
-	// [4] Free Shared variables [if any]
-	// [5] Free Semaphores [if any]
-	// [6] Free all TABLES from the main memory
-	// [7] Free the page DIRECTORY from the main memory
-	/*========================*/
-	// [8] Remove all pages of this program from the page file
-	/*(ALREADY DONE for you)*/
-	//	pf_free_env(e);
-	/*========================*/
-	// [9] free the environment (return it back to the free environment list)
-	/*(ALREADY DONE for you)*/
-	//	free_environment(e);
-	/*========================*/
+	panic("this function is not required...!!");
 }
-
 
 ///*****************************************************************************************
 ///*****************************************************************************************
@@ -862,18 +1021,6 @@ void env_exit()
 // If e was the current env, then runs a new environment (and does not return
 // to the caller).
 //
-/*2015*///obsolete! we run on a scheduler!!
-void env_destroy(struct Env *e)
-{
-	panic("env_destroy() is obsoleted since 2015!");
-	/*
-	start_env_free(e);
-
-	//cprintf("Destroyed the only environment - nothing more to do!\n");
-	while (1)
-		run_command_prompt();
-	 */
-}
 
 void cleanup_buffers(struct Env* e)
 {
@@ -892,6 +1039,7 @@ void cleanup_buffers(struct Env* e)
 
 			//cprintf("==================\n");
 			//cprintf("[%s] ptr_fi = %x, ptr_fi next = %x \n",curenv->prog_name, ptr_fi, LIST_NEXT(ptr_fi));
+			//bufferlist_remove_page(&modified_frame_list, ptr_fi);
 			LIST_REMOVE(&modified_frame_list, ptr_fi);
 			free_frame(ptr_fi);
 
@@ -905,83 +1053,6 @@ void cleanup_buffers(struct Env* e)
 	//	cprintf("[%s] aft, mod = %d, fb = %d, fnb = %d\n",curenv->prog_name, ffc2.modified, ffc2.freeBuffered, ffc2.freeNotBuffered);
 }
 
-
-/*2015*///obsolete! use env_exit() instead! it add the exited env to the EXIT list, then reinvoke the scheduler
-void env_run_cmd_prmpt()
-{
-	panic("env_run_cmd_prmpt() is obsoleted since 2015! use env_exit() instead");
-	/*
-	//NEW !! 2012, remove remaining pages in the modified list and reset counter (if any)
-	struct Frame_Info *ptr_fi=NULL ;
-
-	//	cprintf("[%s] deleting modified at end of env\n", curenv->prog_name);
-	//	struct freeFramesCounters ffc = calculate_available_frames();
-	//	cprintf("[%s] bef, mod = %d, fb = %d, fnb = %d\n",curenv->prog_name, ffc.modified, ffc.freeBuffered, ffc.freeNotBuffered);
-
-	LIST_FOREACH(ptr_fi, &modified_frame_list)
-	{
-		if(ptr_fi->environment != curenv)
-		{
-			//			cprintf("[%s] frame env = %x, curenv = %x\n", curenv->prog_name ,ptr_fi->environment, curenv);
-		}
-		if(ptr_fi->environment == curenv)
-		{
-			pt_set_page_permissions(ptr_fi->environment, ptr_fi->va, 0, PERM_BUFFERED);
-
-			ptr_fi->isBuffered=0;
-			ptr_fi->references=0;
-			ptr_fi->environment=0;
-			ptr_fi->va=0;
-
-			//cprintf("==================\n");
-			//cprintf("[%s] ptr_fi = %x, ptr_fi next = %x \n",curenv->prog_name, ptr_fi, LIST_NEXT(ptr_fi));
-			bufferlist_remove_page(&modified_frame_list, ptr_fi);
-			LIST_INSERT_HEAD(&free_frame_list, ptr_fi) ;
-
-
-			//cprintf("[%s] ptr_fi = %x, ptr_fi next = %x, saved next = %x \n", curenv->prog_name ,ptr_fi, LIST_NEXT(ptr_fi), ___ptr_next);
-			//cprintf("==================\n");
-		}
-	}
-
-	//	cprintf("[%s] finished deleting modified frames at the end of env\n", curenv->prog_name);
-	//	struct freeFramesCounters ffc2 = calculate_available_frames();
-	//	cprintf("[%s] aft, mod = %d, fb = %d, fnb = %d\n",curenv->prog_name, ffc2.modified, ffc2.freeBuffered, ffc2.freeNotBuffered);
-
-	//LIST_CONCAT(&free_frame_list, &modified_frame_list);
-
-
-	//struct UserProgramInfo* upi= get_user_program_info_by_env(curenv);
-	//	// Clear out all the saved register state,
-	//	// to prevent the register values
-	//	// of a prior environment inhabiting this Env structure
-	//	// from "leaking" into our new environment.
-	//	memset(&curenv->env_tf, 0, sizeof(curenv->env_tf));
-	//
-	//	// Set up appropriate initial values for the segment registers.
-	//	// GD_UD is the user data segment selector in the GDT, and
-	//	// GD_UT is the user text segment selector (see inc/memlayout.h).
-	//	// The low 2 bits of each segment register contains the
-	//	// Requester Privilege Level (RPL); 3 means user mode.
-	//
-	//	curenv->env_tf.tf_ds = GD_UD | 3;
-	//	curenv->env_tf.tf_es = GD_UD | 3;
-	//	curenv->env_tf.tf_ss = GD_UD | 3;
-	//	curenv->env_tf.tf_esp = (uint32*)USTACKTOP;
-	//	curenv->env_tf.tf_cs = GD_UT | 3;
-	//	//set_environment_entry_point(upi);
-
-	lcr3(K_PHYSICAL_ADDRESS(ptr_page_directory));
-
-
-	//remove the process from the ready queue
-	sched_remove_ready(curenv);
-	curenv->env_status = ENV_EXIT;
-	curenv = NULL;
-	fos_scheduler();
-
-	 */
-}
 
 //
 // Restores the register values in the Trapframe with the 'iret' instruction.
@@ -1000,4 +1071,3 @@ env_pop_tf(struct Trapframe *tf)
 			: : "g" (tf) : "memory");
 	panic("iret failed");  /* mostly to placate the compiler */
 }
-

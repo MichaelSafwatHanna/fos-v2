@@ -24,9 +24,11 @@
 // envid_ts less than 0 signify errors.
 
 
-//Sizes of working sets & modified buffers
-#define __PWS_MAX_SIZE 	50
+//Sizes of working sets & LRU 2nd list [if NO KERNEL HEAP]
 #define __TWS_MAX_SIZE 	50
+
+#define __PWS_MAX_SIZE 	3000
+#define __LRU_SNDLST_SIZE 0
 
 //2017: moved to shared_memory_manager
 //#define MAX_SHARES 100
@@ -51,14 +53,27 @@ unsigned int _ModifiedBufferLength;
 
 uint32 old_pf_counter;
 //uint32 mydblchk;
-struct ResidentSetElement {
+struct WorkingSetElement {
 	unsigned int virtual_address;
 	uint8 empty;
-
 	//2012
 	unsigned int time_stamp ;
+
+	//2020
+	LIST_ENTRY(WorkingSetElement) prev_next_info;	// list link pointers
 };
 
+struct SharingVarInfo
+{
+	 uint32 start_va;
+	 uint32 size;
+	 uint32 owner_flag;
+	 uint32 id_in_shares_array;
+};
+
+//2020
+LIST_HEAD(WS_List, WorkingSetElement);		// Declares 'struct WS_list'
+//======================================================================
 
 struct Env {
 	struct Trapframe env_tf;	// Saved registers
@@ -86,15 +101,15 @@ struct Env {
 	unsigned int page_WS_max_size;
 
 #if USE_KHEAP == 0
-	struct ResidentSetElement ptr_pageResidentSet[__PWS_MAX_SIZE];
+	struct WorkingSetElement ptr_pageWorkingSet[__PWS_MAX_SIZE];
 #else
-	struct ResidentSetElement* ptr_pageResidentSet;
+	struct WorkingSetElement* ptr_pageWorkingSet;
 #endif
 
 	//table working set management
-	struct ResidentSetElement __ptr_tws[__TWS_MAX_SIZE];
+	struct WorkingSetElement __ptr_tws[__TWS_MAX_SIZE];
 
-	uint32 page_last_RS_index;
+	uint32 page_last_WS_index;
 	uint32 table_last_WS_index;
 
 	uint32 pageFaultsCounter;
@@ -106,17 +121,38 @@ struct Env {
 	uint32 nModifiedPages;
 	uint32 nNotModifiedPages;
 
+	//2020
+	uint32 nPageIn, nPageOut, nNewPageAdded;
+	uint32 initNumStackPages ;
+
 	//Program name (to print it via USER.cprintf in multitasking)
 	char prog_name[PROGNAMELEN];
 
 	//2016
-	struct ResidentSetElement* __uptr_pws;
+	struct WorkingSetElement* __uptr_pws;
 
 	//2018:
 	//Percentage of WS pages to be removed [either for scarce RAM or Full WS]
 	unsigned int percentage_of_WS_pages_to_be_removed;
 	uint32 nClocks ;
+
+	int priority;
+
+	//2020
+	struct WS_List PageWorkingSetList ;	//LRU Approx: List of available WS elements
+	struct WS_List ActiveList ;		//LRU Approx: ActiveList that should work as FCFS
+	struct WS_List SecondList ;		//LRU Approx: SecondList that should work as LRU
+	int ActiveListSize ;			//LRU Approx: Max allowed size of ActiveList
+	int SecondListSize ;			//LRU Approx: Max allowed size of SecondList
+	//================================================================================
+
 };
+
+#define PRIORITY_LOW    		1
+#define PRIORITY_BELOWNORMAL    2
+#define PRIORITY_NORMAL		    3
+#define PRIORITY_ABOVENORMAL    4
+#define PRIORITY_HIGH		    5
 
 #define LOG2NENV		10
 //#define NENV			(1 << LOG2NENV)

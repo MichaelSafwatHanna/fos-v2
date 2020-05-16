@@ -50,6 +50,9 @@ enum
 	SYS_gettst,
 	SYS_get_heap_strategy,
 	SYS_set_heap_strategy,
+	SYS_check_LRU_lists,
+	SYS_check_LRU_lists_free,
+	SYS_new,
 	NSYSCALLS
 };
 

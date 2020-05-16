@@ -17,6 +17,7 @@ extern void __static_cpt(uint32 *ptr_page_directory, const uint32 virtual_addres
 
 void __page_fault_handler_with_buffering(struct Env * curenv, uint32 fault_va);
 void page_fault_handler(struct Env * curenv, uint32 fault_va);
+void page_fault_handler_old(struct Env * curenv, uint32 fault_va);
 void table_fault_handler(struct Env * curenv, uint32 fault_va);
 
 static struct Taskstate ts;
@@ -214,10 +215,11 @@ static void trap_dispatch(struct Trapframe *tf)
 	// Handle processor exceptions.
 	// LAB 3: Your code here.
 
+
 	if(tf->tf_trapno == T_PGFLT)
 	{
 		//print_trapframe(tf);
-		if(isPageReplacmentAlgorithmLRU())
+		if(isPageReplacmentAlgorithmLRUTimeStamp())
 		{
 			//cprintf("===========Table WS before updating time stamp========\n");
 			//env_table_ws_print(curenv) ;
@@ -273,8 +275,8 @@ void trap(struct Trapframe *tf)
 	}
 	if(tf->tf_trapno == IRQ0_Clock)
 	{
-		//uint16 cnt0 = kclock_read_cnt0_latch() ;
-		//cprintf("CLOCK INTERRUPT: Counter0 Value = %d\n", cnt0 );
+		//		uint16 cnt0 = kclock_read_cnt0() ;
+		//		cprintf("CLOCK INTERRUPT: Counter0 Value = %d\n", cnt0 );
 
 		if (userTrap)
 		{
@@ -297,16 +299,34 @@ void trap(struct Trapframe *tf)
 		}
 	}
 	trap_dispatch(tf);
-	assert(curenv && curenv->env_status == ENV_RUNNABLE);
-	env_run(curenv);
+	if (userTrap)
+	{
+		assert(curenv && curenv->env_status == ENV_RUNNABLE);
+		env_run(curenv);
+	}
+	/* 2019
+	 * If trap from kernel, then return to the called kernel function using the passed param "tf"
+	 * not the user one that's stored in curenv
+	 */
+	else
+	{
+		env_pop_tf((tf));
+	}
 }
 
-void setPageReplacmentAlgorithmLRU(){_PageRepAlgoType = PG_REP_LRU;}
+//2020
+void setPageReplacmentAlgorithmLRU(int LRU_TYPE)
+{
+	assert(LRU_TYPE == PG_REP_LRU_TIME_APPROX || LRU_TYPE == PG_REP_LRU_LISTS_APPROX);
+	_PageRepAlgoType = LRU_TYPE ;
+}
 void setPageReplacmentAlgorithmCLOCK(){_PageRepAlgoType = PG_REP_CLOCK;}
 void setPageReplacmentAlgorithmFIFO(){_PageRepAlgoType = PG_REP_FIFO;}
 void setPageReplacmentAlgorithmModifiedCLOCK(){_PageRepAlgoType = PG_REP_MODIFIEDCLOCK;}
 
-uint32 isPageReplacmentAlgorithmLRU(){if(_PageRepAlgoType == PG_REP_LRU) return 1; return 0;}
+//2020
+uint32 isPageReplacmentAlgorithmLRUTimeStamp(){if(_PageRepAlgoType == PG_REP_LRU_TIME_APPROX) return 1; return 0;}
+uint32 isPageReplacmentAlgorithmLRULists(){if(_PageRepAlgoType == PG_REP_LRU_LISTS_APPROX) return 1; return 0;}
 uint32 isPageReplacmentAlgorithmCLOCK(){if(_PageRepAlgoType == PG_REP_CLOCK) return 1; return 0;}
 uint32 isPageReplacmentAlgorithmFIFO(){if(_PageRepAlgoType == PG_REP_FIFO) return 1; return 0;}
 uint32 isPageReplacmentAlgorithmModifiedCLOCK(){if(_PageRepAlgoType == PG_REP_MODIFIEDCLOCK) return 1; return 0;}
@@ -348,6 +368,30 @@ void detect_modified_loop()
 		slowPtr = LIST_NEXT(slowPtr); // advance the slow pointer only once
 	}
 	cprintf("finished modi loop detection\n");
+}
+
+
+void print_page_working_set_or_LRUlists(struct Env *e)
+{
+	if (isPageReplacmentAlgorithmLRULists())
+	{
+		int i = 0;
+		cprintf("ActiveList:\n============\n") ;
+		struct WorkingSetElement * ptr_WS_element ;
+		LIST_FOREACH(ptr_WS_element, &(e->ActiveList))
+		{
+			cprintf("%d:	%x\n", i++, ptr_WS_element->virtual_address);
+		}
+		cprintf("\nSecondList:\n============\n") ;
+		LIST_FOREACH(ptr_WS_element, &(e->SecondList))
+		{
+			cprintf("%d:	%x\n", i++, ptr_WS_element->virtual_address);
+		}
+	}
+	else
+	{
+		env_page_ws_print(e);
+	}
 }
 
 void fault_handler(struct Trapframe *tf)
@@ -393,9 +437,9 @@ void fault_handler(struct Trapframe *tf)
 		// we have normal page fault =============================================================
 		faulted_env->pageFaultsCounter ++ ;
 
-//		cprintf("[%08s] user PAGE fault va %08x\n", curenv->prog_name, fault_va);
-//				cprintf("\nPage working set BEFORE fault handler...\n");
-//				env_page_ws_print(curenv);
+		//cprintf("[%08s] user PAGE fault va %08x\n", curenv->prog_name, fault_va);
+		//cprintf("\nPage working set BEFORE fault handler...\n");
+		//print_page_working_set_or_LRUlists(curenv);
 
 		if(isBufferingEnabled())
 		{
@@ -404,9 +448,11 @@ void fault_handler(struct Trapframe *tf)
 		else
 		{
 			page_fault_handler(faulted_env, fault_va);
+			//page_fault_handler_old(faulted_env, fault_va);
 		}
-//				cprintf("\nPage working set AFTER fault handler...\n");
-//				env_page_ws_print(curenv);
+		//		cprintf("\nPage working set AFTER fault handler...\n");
+		//		print_page_working_set_or_LRUlists(curenv);
+
 
 	}
 
@@ -424,47 +470,35 @@ void table_fault_handler(struct Env * curenv, uint32 fault_va)
 	//panic("table_fault_handler() is not implemented yet...!!");
 	//Check if it's a stack page
 	uint32* ptr_table;
-	if(USE_KHEAP)
+#if USE_KHEAP
 	{
 		ptr_table = create_page_table(curenv->env_page_directory, (uint32)fault_va);
 	}
-	else
+#else
 	{
 		__static_cpt(curenv->env_page_directory, (uint32)fault_va, &ptr_table);
 	}
-
+#endif
 }
 
-//========================================================
-/*ASSIGNMENT-4*/
-//========================================================
-//Q1: Page Fault Handler Using FIFO Page Replacement Strategy
-//==============================================================
-/*FILL this function
- * arguments[1] - curenv: is the environment of the current running program that requests a page not exist in MEM
- * arguments[2] - fault_va: the virtual address of a page that is required to be accessed but it doesn’t exist in the main memory
- */
+//Handle the page fault
+
 void page_fault_handler(struct Env * curenv, uint32 fault_va)
 {
-	//TODO: Assignment4.Q1
-	//put your logic here
-	//...
-	panic("The function is not implemented yet");
+	//TODO: [FINAL_EVAL_2020 - VER_C] - [1] PAGE FAULT HANDLER [PLACEMENT ONLY]
+	// Write your code here, remove the panic and write your code
+	panic("page_fault_handler() is not implemented yet...!!");
+
+	//refer to the documentation for details
+
 }
 
-//========================================================
-//Q2: Page Fault Handler with Buffering
-//==============================================================
-/*FILL this function
- * arguments[1] - curenv: is the environment of the current running program that requests a page not exist in MEM
- * arguments[2] - fault_va: the virtual address of a page that is required to be accessed but it doesn’t exist in the main memory
- */
+
 void __page_fault_handler_with_buffering(struct Env * curenv, uint32 fault_va)
 {
-	//TODO: Assignment4.Q2
-	//put your logic here
-	//...
-	panic("The function is not implemented yet");
-}
+	// Write your code here, remove the panic and write your code
+	panic("__page_fault_handler_with_buffering() is not implemented yet...!!");
 
+	//refer to the documentation for details
+}
 

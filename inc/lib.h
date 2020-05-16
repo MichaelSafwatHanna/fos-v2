@@ -17,6 +17,7 @@
 #include <inc/memlayout.h>
 #include <inc/syscall.h>
 #include <inc/uheap.h>
+#include <inc/ubuddy.h>
 
 
 #define USED(x)		(void)(x)
@@ -49,6 +50,7 @@ uint32 	sys_calculate_required_frames(uint32 start_virtual_address, uint32 size)
 uint32 	sys_calculate_free_frames();
 uint32 	sys_calculate_modified_frames();
 uint32 	sys_calculate_notmod_frames();
+void	sys_new(uint32 virtual_address, uint32 size);
 
 void 	sys_freeMem(uint32 virtual_address, uint32 size);
 void	sys_allocateMem(uint32 virtual_address, uint32 size);
@@ -73,8 +75,9 @@ int 	sys_freeSharedObject(int32 sharedObjectID, void *startVA);
 
 uint32 	sys_getMaxShares();
 
-//2016. Edited @ 2018
-int 	sys_create_env(char* programName, unsigned int page_WS_size, unsigned int percent_WS_pages_to_remove);
+//2016. Edited @ 2018 @2020 to add secondlist size for LRU list approximation
+int 	sys_create_env(char* programName, unsigned int page_WS_size,unsigned int LRU_second_list_size,unsigned int percent_WS_pages_to_remove);
+
 ////////=====
 void	sys_free_env(int32 envId);
 void	sys_run_env(int32 envId);
@@ -100,6 +103,10 @@ uint32 sys_isUHeapPlacementStrategyWORSTFIT();
 void sys_set_uheap_strategy(uint32 heapStrategy);
 
 struct uint64 sys_get_virtual_time();
+
+//2020
+int sys_check_LRU_lists(uint32* active_list_content, uint32* second_list_content, int actual_active_list_size, int actual_second_list_size);
+int sys_check_LRU_lists_free(uint32* list_content, int list_size);
 
 // console.c
 void	atomic_cputchar(int c);

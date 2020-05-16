@@ -28,6 +28,7 @@ FUNCTIONS:	readline, cprintf, execute_command, run_command_prompt, command_kerne
 #include <kern/sched.h>
 #include <kern/kheap.h>
 #include <kern/utilities.h>
+#include <kern/priority_manager.h>
 
 
 //Structure for each command
@@ -45,6 +46,7 @@ extern uint32 isBufferingEnabled();
 extern void setModifiedBufferLength(uint32 length) ;
 extern uint32 getModifiedBufferLength();
 extern int test_krealloc();
+extern int test_krealloc_BF();
 
 int execute_command(char *command_string);
 int command_writeusermem(int number_of_arguments, char **arguments);
@@ -88,24 +90,43 @@ extern int test_kmalloc();
 extern int test_kmalloc_nextfit();
 extern int test_kmalloc_bestfit1();
 extern int test_kmalloc_bestfit2();
+extern int test_kmalloc_firstfit1();
+extern int test_kmalloc_firstfit2();
+extern int test_kmalloc_worstfit();
 extern int test_kfree();
 extern int test_kfree_bestfit();
 extern int test_kheap_phys_addr();
 extern int test_kheap_virt_addr();
 extern int test_three_creation_functions();
+extern void test_priority_normal_and_higher();
+extern void test_priority_normal_and_lower();
+extern int test_kfreeall();
+extern int test_kexpand();
+extern int test_kshrink();
+extern int test_kfreelast();
+extern int test_krealloc();
 
 int command_test_kmalloc(int number_of_arguments, char **arguments);
 int command_test_kfree(int number_of_arguments, char **arguments);
 int command_test_kheap_phys_addr(int number_of_arguments, char **arguments);
 int command_test_kheap_virt_addr(int number_of_arguments, char **arguments);
 int command_test_three_creation_functions(int number_of_arguments, char **arguments);
+int command_test_kfreeall(int number_of_arguments, char **arguments);
+int command_test_kexpand(int number_of_arguments, char **arguments);
+int command_test_kshrink(int number_of_arguments, char **arguments);
+int command_test_kfreelast(int number_of_arguments, char **arguments);
 int command_test_krealloc(int number_of_arguments, char **arguments);
+int command_test_sc4_MLFQ(int number_of_arguments, char **arguments);
 
 //2018
 int command_sch_RR(int number_of_arguments, char **arguments);
 int command_sch_MLFQ(int number_of_arguments, char **arguments);
 int command_print_sch_method(int number_of_arguments, char **arguments);
 int command_sch_test(int number_of_arguments, char **arguments);
+
+int command_test_priority1(int number_of_arguments, char **arguments);
+int command_test_priority2(int number_of_arguments, char **arguments);
+int command_test_sc_MLFQ(int number_of_arguments, char **arguments);
 
 //Array of commands. (initialized)
 struct Command commands[] =
@@ -166,8 +187,14 @@ struct Command commands[] =
 		{"tstkphysaddr", "Kernel Heap: test kheap_phys_addr", command_test_kheap_phys_addr},
 		{"tstkvirtaddr", "Kernel Heap: test kheap_virt_addr", command_test_kheap_virt_addr},
 		{"tst3functions", "Env Load: test the creation of new dir, tables and pages WS", command_test_three_creation_functions},
-		{"tstkrealloc","Kernel realloc: test realloc (virtual address = 0)",command_test_krealloc }
-
+		{"tstkfreeall", "Kernel Heap: test kfreeall (freed frames, mem access...etc)", command_test_kfreeall},
+		{"tstkexpand", "Kernel Heap: test expanding last allocated var", command_test_kexpand},
+		{"tstkshrink", "Kernel Heap: test srinking last allocated var", command_test_kshrink},
+		{"tstkfreelast", "Kernel Heap: test freeing last allocated var", command_test_kfreelast},
+		{"tstkrealloc","Kernel realloc: test realloc (virtual address = 0)",command_test_krealloc },
+		{"tstpriority1", "Tests the priority of the program (Normal and Higher)", command_test_priority1},
+		{"tstpriority2", "Tests the priority of the program (Normal and Lower)", command_test_priority2},
+		{"tstsc4","Scenario#4: MLFQ",command_test_sc_MLFQ }
 };
 
 //Number of commands = size of the array / size of command structure
@@ -662,36 +689,97 @@ int command_meminfo(int number_of_arguments, char **arguments)
 	return 0;
 }
 
+//2020
+struct Env * CreateEnv(int number_of_arguments, char **arguments)
+{
+	struct Env* env;
+	uint32 pageWSSize = __PWS_MAX_SIZE;		//arg#3 default
+	uint32 LRUSecondListSize = 0;			//arg#4 default
+	uint32 percent_WS_pages_to_remove = 0;	//arg#5 default
+//#if USE_KHEAP
+	{
+		switch (number_of_arguments)
+		{
+		case 5:
+			if(!isPageReplacmentAlgorithmLRULists())
+			{
+				cprintf("ERROR: Current Replacement is NOT LRU LISTS, invalid number of args\nUsage: <command> <prog_name> <page_WS_size> [<LRU_second_list_size>] [<DYN_LOC_SCOPE_percent_WS_to_remove>]\naborting...\n");
+				return NULL;
+			}
+			percent_WS_pages_to_remove = strtol(arguments[4], NULL, 10);
+			LRUSecondListSize = strtol(arguments[3], NULL, 10);
+			pageWSSize = strtol(arguments[2], NULL, 10);
+			break;
+		case 4:
+			if(!isPageReplacmentAlgorithmLRULists())
+			{
+				percent_WS_pages_to_remove = strtol(arguments[3], NULL, 10);
+			}
+			else
+			{
+				LRUSecondListSize = strtol(arguments[3], NULL, 10);
+			}
+			pageWSSize = strtol(arguments[2], NULL, 10);
+			break;
+		case 3:
+			if(isPageReplacmentAlgorithmLRULists())
+			{
+				cprintf("ERROR: Current Replacement is LRU LISTS, Please specify a working set size in the 3rd arg and LRU second list size in the 4th arg, aborting.\n");
+				return NULL;
+			}
+			pageWSSize = strtol(arguments[2], NULL, 10);
+			break;
+		default:
+			cprintf("ERROR: invalid number of args\nUsage: <command> <prog_name> <page_WS_size> [<LRU_second_list_size>] [<DYN_LOC_SCOPE_percent_WS_to_remove>]\naborting...\n");
+			return NULL;
+
+			break;
+		}
+		if(pageWSSize > __PWS_MAX_SIZE)
+		{
+			cprintf("ERROR: size of WS must be less than or equal to %d... aborting", __PWS_MAX_SIZE);
+			return NULL;
+		}
+		if(isPageReplacmentAlgorithmLRULists())
+		{
+			if (LRUSecondListSize > pageWSSize - 1)
+			{
+				cprintf("ERROR: size of LRU second list can't equal/exceed the size of the page WS... aborting\n");
+				return NULL;
+			}
+		}
+		assert(percent_WS_pages_to_remove >= 0 && percent_WS_pages_to_remove <= 100);
+
+	}
+//#else
+//	{
+//		switch (number_of_arguments)
+//		{
+//		case 3:
+//			percent_WS_pages_to_remove = strtol(arguments[2], NULL, 10);
+//		case 2:
+//			break;
+//		default:
+//			cprintf("ERROR: invalid number of args\nUsage: <command> <prog_name> [<DYN_LOC_SCOPE_percent_WS_to_remove>]\naborting...\n");
+//			return NULL;
+//
+//			break;
+//		}
+//		if(isPageReplacmentAlgorithmLRU(PG_REP_LRU_LISTS_APPROX))
+//		{
+//			LRUSecondListSize = __LRU_SNDLST_SIZE;
+//		}
+//	}
+//#endif
+	assert(percent_WS_pages_to_remove >= 0 && percent_WS_pages_to_remove <= 100);
+	env = env_create(arguments[1], pageWSSize, LRUSecondListSize, percent_WS_pages_to_remove);
+
+	return env;
+}
 
 int command_run_program(int number_of_arguments, char **arguments)
 {
-	struct Env* env;
-	if(USE_KHEAP)
-	{
-		if(number_of_arguments < 3)
-		{
-			cprintf("Error: Please specify a working set size in the third argument, aborting.\n");
-			return 0;
-		}
-		unsigned int percent_WS_pages_to_remove;
-		if (number_of_arguments == 4)
-			percent_WS_pages_to_remove = strtol(arguments[3], NULL, 10);
-		else
-			percent_WS_pages_to_remove = 0;
-
-		env = env_create(arguments[1], strtol(arguments[2], NULL, 10), percent_WS_pages_to_remove);
-	}
-	else
-	{
-		unsigned int percent_WS_pages_to_remove;
-		if (number_of_arguments == 3)
-			percent_WS_pages_to_remove = strtol(arguments[2], NULL, 10);
-		else
-			percent_WS_pages_to_remove = 0;
-
-		//env = env_create(arguments[1], __PWS_MAX_SIZE, percent_WS_pages_to_remove);
-		env = env_create(arguments[1], strtol(arguments[2], NULL, 10), percent_WS_pages_to_remove);
-	}
+	struct Env *env = CreateEnv(number_of_arguments, arguments);
 
 	if(env == NULL) return 0;
 	cprintf("\nEnvironment Id= %d\n",env->env_id);
@@ -715,33 +803,7 @@ int command_kill_program(int number_of_arguments, char **arguments)
 
 int commnad_load_env(int number_of_arguments, char **arguments)
 {
-	struct Env* env;
-	if(USE_KHEAP)
-	{
-		if(number_of_arguments < 3)
-		{
-			cprintf("Error: Please specify a working set size in the third argument, aborting.\n");
-			return 0;
-		}
-		unsigned int percent_WS_pages_to_remove;
-		if (number_of_arguments == 4)
-			percent_WS_pages_to_remove = strtol(arguments[3], NULL, 10);
-		else
-			percent_WS_pages_to_remove = 0;
-
-		env = env_create(arguments[1], strtol(arguments[2], NULL, 10), percent_WS_pages_to_remove);
-	}
-	else
-	{
-		unsigned int percent_WS_pages_to_remove;
-		if (number_of_arguments == 3)
-			percent_WS_pages_to_remove = strtol(arguments[2], NULL, 10);
-		else
-			percent_WS_pages_to_remove = 0;
-
-		env = env_create(arguments[1], __PWS_MAX_SIZE, percent_WS_pages_to_remove);
-	}
-
+	struct Env *env = CreateEnv(number_of_arguments, arguments);
 	if (env == NULL)
 		return 0 ;
 
@@ -775,8 +837,27 @@ int command_kill_all(int number_of_arguments, char **arguments)
 
 int command_set_page_rep_LRU(int number_of_arguments, char **arguments)
 {
-	setPageReplacmentAlgorithmLRU();
-	cprintf("Page replacement algorithm is now LRU\n");
+	if (number_of_arguments < 2)
+	{
+		cprintf("ERROR: please specify the LRU Approx Type (1: TimeStamp Approx, 2: Lists Approx), aborting...\n");
+		return 0;
+	}
+	int LRU_TYPE = strtol(arguments[1], NULL, 10) ;
+	if (LRU_TYPE == PG_REP_LRU_TIME_APPROX)
+	{
+		setPageReplacmentAlgorithmLRU(LRU_TYPE);
+		cprintf("Page replacement algorithm is now LRU with TimeStamp approximation\n");
+	}
+	else if (LRU_TYPE == PG_REP_LRU_LISTS_APPROX)
+	{
+		setPageReplacmentAlgorithmLRU(LRU_TYPE);
+		cprintf("Page replacement algorithm is now LRU with LISTS approximation\n");
+	}
+	else
+	{
+		cprintf("ERROR: Invalid LRU Approx Type (1: TimeStamp Approx, 2: Lists Approx), aborting...\n");
+		return 0;
+	}
 	return 0;
 }
 
@@ -869,8 +950,10 @@ int command_print_page_rep(int number_of_arguments, char **arguments)
 {
 	if (isPageReplacmentAlgorithmCLOCK())
 		cprintf("Page replacement algorithm is CLOCK\n");
-	else if (isPageReplacmentAlgorithmLRU())
-		cprintf("Page replacement algorithm is LRU\n");
+	else if (isPageReplacmentAlgorithmLRUTimeStamp())
+		cprintf("Page replacement algorithm is LRU with TimeStamp approximation\n");
+	else if (isPageReplacmentAlgorithmLRULists())
+		cprintf("Page replacement algorithm is LRU with LISTS approximation\n");
 	else if (isPageReplacmentAlgorithmFIFO())
 		cprintf("Page replacement algorithm is FIFO\n");
 	else if (isPageReplacmentAlgorithmModifiedCLOCK())
@@ -1000,14 +1083,13 @@ int command_disable_modified_buffer(int number_of_arguments, char **arguments)
 
 int command_enable_modified_buffer(int number_of_arguments, char **arguments)
 {
-	//if(!isBufferingEnabled())
+	if(!isBufferingEnabled())
 	{
-		//cprintf("Buffering is not enabled. Please enable buffering first.\n");
+		cprintf("Buffering is not enabled. Please enable buffering first.\n");
 	}
-	//else
+	else
 	{
 		enableModifiedBuffer(1);
-		enableBuffering(1);
 		cprintf("Modified Buffer is now ENABLED\n");
 	}
 	return 0;
@@ -1075,20 +1157,20 @@ int command_test_kmalloc(int number_of_arguments, char **arguments)
 	int testNum = 0 ;
 	if (number_of_arguments==2)
 		testNum = strtol(arguments[1], NULL, 10);
-
-	if (isKHeapPlacementStrategyNEXTFIT())
+	if (isKHeapPlacementStrategyCONTALLOC())
+		test_kmalloc();
+	else if (isKHeapPlacementStrategyFIRSTFIT())
 	{
 		if (testNum == 0)
 		{
 			cprintf("Error: [Kernel.NextFit] must specify the test number (1 or 2) as an argument\n");
 			return 0;
 		}
-		//Test cont. allocation
+		//Test FIRST FIT allocation
 		if (testNum == 1)
-			test_kmalloc();
-		//Test nextfit strategy
+			test_kmalloc_firstfit1();
 		else if (testNum == 2)
-			test_kmalloc_nextfit();
+			test_kmalloc_firstfit2();
 	}
 	else if (isKHeapPlacementStrategyBESTFIT())
 	{
@@ -1104,7 +1186,23 @@ int command_test_kmalloc(int number_of_arguments, char **arguments)
 		else if (testNum == 3)
 			test_kmalloc_bestfit2();
 	}
+	else if (isKHeapPlacementStrategyNEXTFIT())
+	{
+		if (testNum == 0)
+		{
+			cprintf("Error: [Kernel.NextFit] must specify the test number (1 or 2) as an argument\n");
+			return 0;
+		}
+		//Test cont. allocation
+		if (testNum == 1)
+			test_kmalloc();
+		//Test nextfit strategy
+		else if (testNum == 2)
+			test_kmalloc_nextfit();
 
+	}
+	else if (isKHeapPlacementStrategyWORSTFIT())
+		test_kmalloc_worstfit();
 	return 0;
 }
 int command_test_kfree(int number_of_arguments, char **arguments)
@@ -1114,7 +1212,9 @@ int command_test_kfree(int number_of_arguments, char **arguments)
 		test_kfree_bestfit();
 	}
 	else
+	{
 		test_kfree();
+	}
 	return 0;
 }
 int command_test_kheap_phys_addr(int number_of_arguments, char **arguments)
@@ -1132,9 +1232,68 @@ int command_test_three_creation_functions(int number_of_arguments, char **argume
 	test_three_creation_functions();
 	return 0;
 }
-int command_test_krealloc(int number_of_arguments, char **arguments) {
-	test_krealloc();
+
+int command_test_krealloc(int number_of_arguments, char **arguments)
+{
+	return 0;
+}
+
+int command_test_priority1(int number_of_arguments, char **arguments)
+{
+	return 0;
+}
+
+int command_test_priority2(int number_of_arguments, char **arguments)
+{
+	return 0;
+}
+
+int command_test_kfreeall(int number_of_arguments, char **arguments)
+{
+	return 0;
+}
+
+int command_test_kexpand(int number_of_arguments, char **arguments)
+{
+	return 0;
+}
+
+int command_test_kshrink(int number_of_arguments, char **arguments)
+{
+	return 0;
+}
+
+int command_test_kfreelast(int number_of_arguments, char **arguments)
+{
 	return 0;
 }
 
 //END======================================================
+
+int command_test_sc_MLFQ(int number_of_arguments, char **arguments)
+{
+	int numOfSlave2 = strtol(arguments[1], NULL, 10);
+	int cnt = 0 ;
+	int firstTime = 1;
+	struct Env *e ;
+	LIST_FOREACH(e, &env_exit_queue)
+	{
+		if (strcmp(e->prog_name, "tmlfq_2") == 0)
+		{
+			if (firstTime)
+				firstTime = 0;
+			cnt++ ;
+		}
+		else if (!firstTime)
+			break;
+	}
+	if(cnt == numOfSlave2)
+	{
+		cprintf("Congratulations... MLFQScenario# completed successfully\n");
+	}
+	else
+	{
+		panic("MLFQScenario# failed\n");
+	}
+	return 0;
+}

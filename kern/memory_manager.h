@@ -131,13 +131,11 @@ void trim_all_environments();
 
 
 // WS helper functions ===================================================
-inline uint32 env_page_ws_get_size(struct Env *e);
-inline void env_page_ws_invalidate(struct Env* e, uint32 virtual_address);
-inline void env_page_ws_clear_entry(struct Env* e, uint32 entry_index);
-inline uint32 env_page_ws_get_virtual_address(struct Env* e, uint32 entry_index);
 inline uint32 env_page_ws_get_time_stamp(struct Env* e, uint32 entry_index);
-inline uint32 env_page_ws_is_entry_empty(struct Env* e, uint32 entry_index);
+inline void env_page_ws_set_time_stamp(struct Env* e, uint32 entry_index);
 void env_page_ws_print(struct Env *curenv);
+
+
 
 //Page tables entries
 inline void pt_clear_page_table_entry(struct Env *e, uint32 virtual_address);
@@ -147,6 +145,7 @@ inline void add_frame_to_storage(uint32* frames_storage, struct Frame_Info* ptr_
 inline struct Frame_Info* get_frame_from_storage(uint32* frames_storage, uint32 index);
 inline void clear_frames_storage(uint32* frames_storage);
 
+void __new(struct Env* e, uint32 virtual_address, uint32 size);
 //2016
 #define CHECK_IF_KERNEL_ADDRESS(virtual_address) ( (uint32)virtual_address >= (uint32)USER_TOP && (uint32)virtual_address <= (uint32)0xFFFFFFFF)
 #endif /* !FOS_KERN_MEM_MAN_H */

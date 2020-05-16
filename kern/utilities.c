@@ -44,7 +44,10 @@ uint32 calc_no_pages_tobe_removed_from_ready_exit_queues(uint32 WS_or_MEMORY_fla
 			struct Env * ptr_ready_env = NULL;
 			LIST_FOREACH(ptr_ready_env, &(env_ready_queues[i]))
 			{
-				int num_of_pages_in_WS = env_page_ws_get_size(ptr_ready_env);
+				int j=0, counter=0;
+				for(;j<ptr_ready_env->page_WS_max_size; j++) if(ptr_ready_env->ptr_pageWorkingSet[j].empty == 0) counter++;
+				int num_of_pages_in_WS = counter;
+
 				int num_of_pages_to_be_removed = curenv->percentage_of_WS_pages_to_be_removed * num_of_pages_in_WS / 100;
 				if ((curenv->percentage_of_WS_pages_to_be_removed * num_of_pages_in_WS) % 100 > 0)
 					num_of_pages_to_be_removed++;
@@ -55,12 +58,19 @@ uint32 calc_no_pages_tobe_removed_from_ready_exit_queues(uint32 WS_or_MEMORY_fla
 		struct Env * ptr_exit_env = NULL;
 		LIST_FOREACH(ptr_exit_env, &env_exit_queue)
 		{
-			no_of_pages_tobe_removed_from_exit += env_page_ws_get_size(ptr_exit_env);
+			int j=0, counter=0;
+			for(;j<ptr_exit_env->page_WS_max_size; j++) if(ptr_exit_env->ptr_pageWorkingSet[j].empty == 0) counter++;
+			int num_of_pages_in_WS = counter;
+
+			no_of_pages_tobe_removed_from_exit += num_of_pages_in_WS;
 		}
 
 		if(curenv != NULL)
 		{
-			int num_of_pages_in_WS = env_page_ws_get_size(curenv);
+			int j=0, counter=0;
+			for(;j<curenv->page_WS_max_size; j++) if(curenv->ptr_pageWorkingSet[j].empty == 0) counter++;
+			int num_of_pages_in_WS = counter;
+
 			int num_of_pages_to_be_removed = curenv->percentage_of_WS_pages_to_be_removed * num_of_pages_in_WS / 100;
 			if ((curenv->percentage_of_WS_pages_to_be_removed * num_of_pages_in_WS) % 100 > 0)
 				num_of_pages_to_be_removed++;
@@ -69,7 +79,10 @@ uint32 calc_no_pages_tobe_removed_from_ready_exit_queues(uint32 WS_or_MEMORY_fla
 	}
 	else	// THEN RAPID PROCESS SHALL BE FREED ONLY
 	{
-		int num_of_pages_in_WS = env_page_ws_get_size(curenv);
+		int j=0, counter=0;
+		for(;j<curenv->page_WS_max_size; j++) if(curenv->ptr_pageWorkingSet[j].empty == 0) counter++;
+		int num_of_pages_in_WS = counter;
+
 		int num_of_pages_to_be_removed = curenv->percentage_of_WS_pages_to_be_removed * num_of_pages_in_WS / 100;
 		if ((curenv->percentage_of_WS_pages_to_be_removed * num_of_pages_in_WS) % 100 > 0)
 			num_of_pages_to_be_removed++;
@@ -86,7 +99,7 @@ void schenv()
 	__ne = NULL;
 	for (int i = 0; i < num_of_ready_queues; ++i)
 	{
-		if (queue_size(&(env_ready_queues[i])))
+		if (LIST_SIZE(&(env_ready_queues[i])))
 		{
 			__ne = LIST_LAST(&(env_ready_queues[i]));
 			__nl = i;

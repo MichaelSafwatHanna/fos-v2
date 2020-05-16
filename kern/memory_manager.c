@@ -34,7 +34,6 @@ inline void env_table_ws_invalidate(struct Env* e, uint32 virtual_address);
 inline void env_table_ws_set_entry(struct Env* e, uint32 entry_index, uint32 virtual_address);
 inline void env_table_ws_clear_entry(struct Env* e, uint32 entry_index);
 inline uint32 env_table_ws_get_virtual_address(struct Env* e, uint32 entry_index);
-inline uint32 env_table_ws_get_time_stamp(struct Env* e, uint32 entry_index);
 inline uint32 env_table_ws_is_entry_empty(struct Env* e, uint32 entry_index);
 void env_table_ws_print(struct Env *curenv);
 
@@ -168,18 +167,18 @@ void initialize_kernel_VM()
 	ptr_page_directory[PDX(UENVS)] = ptr_page_directory[PDX(UENVS)]|(PERM_USER|(PERM_PRESENT & (~PERM_WRITEABLE)));
 
 
-	if(USE_KHEAP)
+#if USE_KHEAP
 	{
 		// MAKE SURE THAT THIS MAPPING HAPPENS AFTER ALL BOOT ALLOCATIONS (boot_allocate_space)
 		// calls are fininshed, and no remaining data to be allocated for the kernel
 		// map all used pages so far for the kernel
 		boot_map_range(ptr_page_directory, KERNEL_BASE, (uint32)ptr_free_mem - KERNEL_BASE, 0, PERM_WRITEABLE) ;
 	}
-	else
+#else
 	{
 		boot_map_range(ptr_page_directory, KERNEL_BASE, 0xFFFFFFFF - KERNEL_BASE, 0, PERM_WRITEABLE) ;
 	}
-
+#endif
 	// Check that the initial page directory has been set up correctly.
 	check_boot_pgdir();
 
@@ -424,6 +423,10 @@ int allocate_frame(struct Frame_Info **ptr_frame_info)
 	if (*ptr_frame_info == NULL)
 	{
 		panic("ERROR: Kernel run out of memory... allocate_frame cannot find a free frame.\n");
+		// When allocating new frame, if there's no free frame, then you should:
+		//	1-	If any process has exited (those with status ENV_EXIT), then remove one or more of these exited processes from the main memory
+		//	2-	otherwise, free at least 1 frame from the second list of the working set of EACH process
+
 	}
 
 	LIST_REMOVE(&free_frame_list,*ptr_frame_info);
@@ -441,7 +444,6 @@ int allocate_frame(struct Frame_Info **ptr_frame_info)
 	 ***********************************************************/
 
 	initialize_frame_info(*ptr_frame_info);
-
 	return 0;
 }
 
@@ -458,8 +460,6 @@ void free_frame(struct Frame_Info *ptr_frame_info)
 	// Fill this function in
 	LIST_INSERT_HEAD(&free_frame_list, ptr_frame_info);
 	//LOG_STATMENT(cprintf("FN # %d FREED",to_frame_number(ptr_frame_info)));
-
-
 }
 
 //
@@ -490,6 +490,7 @@ int get_page_table(uint32 *ptr_page_directory, const void *virtual_address, uint
 	if(USE_KHEAP && !CHECK_IF_KERNEL_ADDRESS(virtual_address))
 	{
 		*ptr_page_table = (void *)kheap_virtual_address(EXTRACT_ADDRESS(page_directory_entry)) ;
+		//cprintf("===>get_page_table: page_dir_entry = %x ptr_page_table = %x\n", page_directory_entry,*ptr_page_table);
 	}
 	else
 	{
@@ -535,22 +536,9 @@ int get_page_table(uint32 *ptr_page_directory, const void *virtual_address, uint
 
 void * create_page_table(uint32 *ptr_page_directory, const uint32 virtual_address)
 {
-	//TODO: [PROJECT 2019 - MS1 - [2] Kernel Dynamic Allocation] create_page_table()
-	// Write your code here, remove the panic and write your code
-	panic("create_page_table() is not implemented yet...!!");
-
-	//Use kmalloc() to create a new page TABLE for the given virtual address,
-	//link it to the given directory and return the address of the created table
-	//REMEMBER TO:
-	//	a.	clear all entries (as it may contain garbage data)
-	//	b.	clear the TLB cache (using "tlbflush()")
-
-	//change this "return" according to your answer
-
-	return 0;
+	panic("this function is not required...!!");
+	return NULL;
 }
-
-
 
 void __static_cpt(uint32 *ptr_page_directory, const uint32 virtual_address, uint32 **ptr_page_table)
 {
@@ -603,17 +591,22 @@ int map_frame(uint32 *ptr_page_directory, struct Frame_Info *ptr_frame_info, voi
 		//page_directory_entry = ptr_page_directory[PDX(virtual_address)];
 		//ptr_page_table = STATIC_KERNEL_VIRTUAL_ADDRESS(EXTRACT_ADDRESS(page_directory_entry)) ;
 		=============================================================================================*/
-		if(USE_KHEAP)
+#if USE_KHEAP
 		{
 			ptr_page_table = create_page_table(ptr_page_directory, (uint32)virtual_address);
+			//cprintf("======>page table created using kheap at dir = %x PT = %x\n", ptr_page_directory[PDX(virtual_address)], ptr_page_table);
+			uint32* ptr_page_table2 =NULL;
+			//cprintf("======> After the table created at %x\n\n", get_page_table(ptr_page_directory, virtual_address,&ptr_page_table2));
 		}
-		else
+#else
 		{
 			__static_cpt(ptr_page_directory, (uint32)virtual_address, &ptr_page_table);
 		}
+#endif
 
 	}
 
+	//cprintf("NOW .. map add = %x ptr_page_table = %x PTX(virtual_address) = %d\n", virtual_address, ptr_page_table,PTX(virtual_address));
 	uint32 page_table_entry = ptr_page_table[PTX(virtual_address)];
 
 	/*OLD WRONG SOLUTION
@@ -741,14 +734,15 @@ int loadtime_map_frame(uint32 *ptr_page_directory, struct Frame_Info *ptr_frame_
 	//if page table not exist, create it in memory and link it with the directory
 	if (page_directory_entry == 0)
 	{
-		if(USE_KHEAP)
+#if USE_KHEAP
 		{
 			ptr_page_table = create_page_table(ptr_page_directory, (uint32)virtual_address);
 		}
-		else
+#else
 		{
 			__static_cpt(ptr_page_directory, (uint32)virtual_address, &ptr_page_table);
 		}
+#endif
 	}
 
 	ptr_frame_info->references++;
@@ -771,12 +765,13 @@ int loadtime_map_frame(uint32 *ptr_page_directory, struct Frame_Info *ptr_frame_
 
 void allocateMem(struct Env* e, uint32 virtual_address, uint32 size)
 {
-	//TODO: [PROJECT 2019 - MS2 - [5] User Heap] allocateMem() [Kernel Side]
+	//TODO: [FINAL_EVAL_2020 - VER_C] - [2] USER HEAP [Kernel Side Allocate]
 	// Write your code here, remove the panic and write your code
 	panic("allocateMem() is not implemented yet...!!");
 
 	//This function should allocate ALL pages of the required range in the PAGE FILE
 	//and allocate NOTHING in the main memory
+
 }
 
 
@@ -784,22 +779,20 @@ void allocateMem(struct Env* e, uint32 virtual_address, uint32 size)
 
 void freeMem(struct Env* e, uint32 virtual_address, uint32 size)
 {
-	panic("This function is not required");
-}
-
-void __freeMem_with_buffering(struct Env* e, uint32 virtual_address, uint32 size)
-{
-	//TODO: [PROJECT 2019 - MS2 - [5] User Heap] freeMem() [Kernel Side]
+	//TODO: [FINAL_EVAL_2020 - VER_C] - [2] USER HEAP [Kernel Side Free]
 	// Write your code here, remove the panic and write your code
-	panic("__freeMem_with_buffering() is not implemented yet...!!");
+	panic("freeMem() is not implemented yet...!!");
 
 	//This function should:
 	//1. Free ALL pages of the given range from the Page File
 	//2. Free ONLY pages that are resident in the working set from the memory
-	//3. Free any BUFFERED pages in the given range
-	//4. Removes ONLY the empty page tables (i.e. not used) (no pages are mapped in the table)
+	//3. Removes ONLY the empty page tables (i.e. not used) (no pages are mapped in the table)
 
-	//Refer to the project presentation and documentation for details
+}
+
+void __freeMem_with_buffering(struct Env* e, uint32 virtual_address, uint32 size)
+{
+	panic("this function is not required...!!");
 }
 
 //================= [BONUS] =====================
@@ -807,14 +800,7 @@ void __freeMem_with_buffering(struct Env* e, uint32 virtual_address, uint32 size
 
 void moveMem(struct Env* e, uint32 src_virtual_address, uint32 dst_virtual_address, uint32 size)
 {
-	//TODO: [PROJECT 2019 - BONUS3] User Heap Realloc [Kernel Side]
-	//your code is here, remove the panic and write your code
-	panic("moveMem() is not implemented yet...!!");
-
-	// This function should move all pages from "src_virtual_address" to "dst_virtual_address"
-	// with the given size
-	// After finished, the src_virtual_address must no longer be accessed/exist in either page file
-	// or main memory
+	panic("this function is not required...!!");
 }
 
 //==================================================================================================
@@ -912,6 +898,7 @@ struct freeFramesCounters calculate_available_frames()
 	}
 
 
+
 	LIST_FOREACH(ptr, &modified_frame_list)
 	{
 		totalModified++ ;
@@ -937,50 +924,19 @@ uint32 calculate_free_frames()
 ///============================================================================================
 /// Dealing with environment working set
 
-inline uint32 env_page_ws_get_size(struct Env *e)
-{
-	int i=0, counter=0;
-	for(;i<e->page_WS_max_size; i++) if(e->ptr_pageResidentSet[i].empty == 0) counter++;
-	return counter;
-}
 
-inline void env_page_ws_invalidate(struct Env* e, uint32 virtual_address)
-{
-	int i=0;
-	for(;i<e->page_WS_max_size; i++)
-	{
-		if(ROUNDDOWN(e->ptr_pageResidentSet[i].virtual_address,PAGE_SIZE) == ROUNDDOWN(virtual_address,PAGE_SIZE))
-		{
-			env_page_ws_clear_entry(e, i);
-			break;
-		}
-	}
-}
-
-inline void env_page_ws_clear_entry(struct Env* e, uint32 entry_index)
-{
-	assert(entry_index >= 0 && entry_index < (e->page_WS_max_size));
-	e->ptr_pageResidentSet[entry_index].virtual_address = 0;
-	e->ptr_pageResidentSet[entry_index].empty = 1;
-	e->ptr_pageResidentSet[entry_index].time_stamp = 0;
-}
-
-inline uint32 env_page_ws_get_virtual_address(struct Env* e, uint32 entry_index)
-{
-	assert(entry_index >= 0 && entry_index < (e->page_WS_max_size));
-	return ROUNDDOWN(e->ptr_pageResidentSet[entry_index].virtual_address,PAGE_SIZE);
-}
 
 inline uint32 env_page_ws_get_time_stamp(struct Env* e, uint32 entry_index)
 {
 	assert(entry_index >= 0 && entry_index < (e->page_WS_max_size));
-	return e->ptr_pageResidentSet[entry_index].time_stamp;
+	return e->ptr_pageWorkingSet[entry_index].time_stamp;
+}
+inline void env_page_ws_set_time_stamp(struct Env* e, uint32 entry_index)
+{
+	assert(entry_index >= 0 && entry_index < (e->page_WS_max_size));
+	e->ptr_pageWorkingSet[entry_index].time_stamp = 0x80000000;
 }
 
-inline uint32 env_page_ws_is_entry_empty(struct Env* e, uint32 entry_index)
-{
-	return e->ptr_pageResidentSet[entry_index].empty;
-}
 
 void env_page_ws_print(struct Env *curenv)
 {
@@ -988,32 +944,33 @@ void env_page_ws_print(struct Env *curenv)
 	cprintf("PAGE WS:\n");
 	for(i=0; i< (curenv->page_WS_max_size); i++ )
 	{
-		if (curenv->ptr_pageResidentSet[i].empty)
+		if (curenv->ptr_pageWorkingSet[i].empty)
 		{
 			cprintf("EMPTY LOCATION");
-			if(i==curenv->page_last_RS_index )
+			if(i==curenv->page_last_WS_index )
 			{
 				cprintf("		<--");
 			}
 			cprintf("\n");
 			continue;
 		}
-		uint32 virtual_address = curenv->ptr_pageResidentSet[i].virtual_address;
-		uint32 time_stamp = curenv->ptr_pageResidentSet[i].time_stamp;
+		uint32 virtual_address = curenv->ptr_pageWorkingSet[i].virtual_address;
+		uint32 time_stamp = curenv->ptr_pageWorkingSet[i].time_stamp;
 
-		uint32* ptr_page_table= NULL;
-		get_page_table(curenv->env_page_directory, (void*) virtual_address, &ptr_page_table);
-		uint32 perm = ptr_page_table[PTX(virtual_address)] & 0x00000FFF;
+		uint32 *ptr_table = NULL;
+		get_page_table(curenv->env_page_directory,(void*) virtual_address, &ptr_table);
+		uint32 perm = ptr_table[PTX(virtual_address)];
+
 		char isModified = ((perm&PERM_MODIFIED) ? 1 : 0);
 		char isUsed= ((perm&PERM_USED) ? 1 : 0);
 		char isBuffered= ((perm&PERM_BUFFERED) ? 1 : 0);
 
 
-		cprintf("address @ %d = %x",i, curenv->ptr_pageResidentSet[i].virtual_address);
+		cprintf("address @ %d = %x",i, curenv->ptr_pageWorkingSet[i].virtual_address);
 
 		cprintf(", used= %d, modified= %d, buffered= %d, time stamp= %x", isUsed, isModified, isBuffered, time_stamp) ;
 
-		if(i==curenv->page_last_RS_index )
+		if(i==curenv->page_last_WS_index )
 		{
 			cprintf(" <--");
 		}
@@ -1043,7 +1000,7 @@ void env_table_ws_print(struct Env *curenv)
 		uint32 virtual_address = curenv->__ptr_tws[i].virtual_address;
 		cprintf("env address at %d = %x",i, curenv->__ptr_tws[i].virtual_address);
 
-		cprintf(", used bit = %d, time stamp = %d", pd_is_table_used(curenv, virtual_address), curenv->__ptr_tws[i].time_stamp);
+		cprintf(", used bit = %d", pd_is_table_used(curenv, virtual_address));
 		if(i==curenv->table_last_WS_index )
 		{
 			cprintf(" <--");
@@ -1052,76 +1009,25 @@ void env_table_ws_print(struct Env *curenv)
 	}
 }
 
-inline uint32 env_table_ws_get_size(struct Env *e)
-{
-	int i=0, counter=0;
-	for(;i<__TWS_MAX_SIZE; i++) if(e->__ptr_tws[i].empty == 0) counter++;
-	return counter;
-}
-
-inline void env_table_ws_invalidate(struct Env* e, uint32 virtual_address)
-{
-	int i=0;
-	for(;i<__TWS_MAX_SIZE; i++)
-	{
-		if(ROUNDDOWN(e->__ptr_tws[i].virtual_address,PAGE_SIZE*1024) == ROUNDDOWN(virtual_address,PAGE_SIZE*1024))
-		{
-			env_table_ws_clear_entry(e, i);
-			break;
-		}
-	}
-}
-
-inline void env_table_ws_set_entry(struct Env* e, uint32 entry_index, uint32 virtual_address)
-{
-	assert(entry_index >= 0 && entry_index < __TWS_MAX_SIZE);
-	assert(virtual_address >= 0 && virtual_address < USER_TOP);
-	e->__ptr_tws[entry_index].virtual_address = ROUNDDOWN(virtual_address,PAGE_SIZE*1024);
-	e->__ptr_tws[entry_index].empty = 0;
-
-	//e->__ptr_tws[entry_index].time_stamp = time;
-	e->__ptr_tws[entry_index].time_stamp = 0x80000000;
-	return;
-}
-
-inline void env_table_ws_clear_entry(struct Env* e, uint32 entry_index)
-{
-	assert(entry_index >= 0 && entry_index < __TWS_MAX_SIZE);
-	e->__ptr_tws[entry_index].virtual_address = 0;
-	e->__ptr_tws[entry_index].empty = 1;
-	e->__ptr_tws[entry_index].time_stamp = 0;
-}
-
-inline uint32 env_table_ws_get_virtual_address(struct Env* e, uint32 entry_index)
-{
-	assert(entry_index >= 0 && entry_index < __TWS_MAX_SIZE);
-	return ROUNDDOWN(e->__ptr_tws[entry_index].virtual_address,PAGE_SIZE*1024);
-}
-
-
-inline uint32 env_table_ws_get_time_stamp(struct Env* e, uint32 entry_index)
-{
-	assert(entry_index >= 0 && entry_index < __TWS_MAX_SIZE);
-	return e->__ptr_tws[entry_index].time_stamp;
-}
-
-inline uint32 env_table_ws_is_entry_empty(struct Env* e, uint32 entry_index)
-{
-	return e->__ptr_tws[entry_index].empty;
-}
 
 void addTableToTableWorkingSet(struct Env *e, uint32 tableAddress)
 {
 	tableAddress = ROUNDDOWN(tableAddress, PAGE_SIZE*1024);
 	e->__ptr_tws[e->table_last_WS_index].virtual_address = tableAddress;
 	e->__ptr_tws[e->table_last_WS_index].empty = 0;
-	e->__ptr_tws[e->table_last_WS_index].time_stamp = 0x00000000;
-	//e->__ptr_tws[e->table_last_WS_index].time_stamp = time;
 
 	e->table_last_WS_index ++;
 	e->table_last_WS_index %= __TWS_MAX_SIZE;
 }
 ///=================================================================================================
+
+
+
+
+///****************************************************************************************///
+///******************************* PAGE BUFFERING FUNCTIONS ******************************///
+///****************************************************************************************///
+
 ///============================================================================================
 /// Dealing with page and page table entry flags
 
@@ -1189,23 +1095,19 @@ inline void pt_clear_page_table_entry(struct Env* ptr_env, uint32 virtual_addres
 	tlb_invalidate((void *)NULL, (void *)virtual_address);
 }
 
+
 //=============================================================
 // 2014 - edited in 2017
 //=============================================================
 // [1] if KHEAP = 1: Create the frames_storage by allocating a PAGE for its directory
 inline uint32* create_frames_storage()
 {
-	if (USE_KHEAP)
+	uint32* frames_storage = (void *)kmalloc(PAGE_SIZE);
+	if(frames_storage == NULL)
 	{
-		uint32* frames_storage = (void *)kmalloc(PAGE_SIZE);
-		if(frames_storage == NULL)
-		{
-			panic("NOT ENOUGH KERNEL HEAP SPACE");
-		}
-		return frames_storage;
+		panic("NOT ENOUGH KERNEL HEAP SPACE");
 	}
-	else
-		return NULL;
+	return frames_storage;
 }
 // [2] Add a frame info to the storage of frames at the given index
 inline void add_frame_to_storage(uint32* frames_storage, struct Frame_Info* ptr_frame_info, uint32 index)
@@ -1215,15 +1117,16 @@ inline void add_frame_to_storage(uint32* frames_storage, struct Frame_Info* ptr_
 	int r = get_page_table(frames_storage, (void*) va, &ptr_page_table);
 	if(r == TABLE_NOT_EXIST)
 	{
-		if(USE_KHEAP)
+#if USE_KHEAP
 		{
 			ptr_page_table = create_page_table(frames_storage, (uint32)va);
 		}
-		else
+#else
 		{
 			__static_cpt(frames_storage, (uint32)va, &ptr_page_table);
-		}
 
+		}
+#endif
 	}
 	ptr_page_table[PTX(va)] = CONSTRUCT_ENTRY(to_physical_address(ptr_frame_info), 0 | PERM_PRESENT);
 }
@@ -1247,14 +1150,15 @@ inline void clear_frames_storage(uint32* frames_storage)
 	{
 		if (frames_storage[i] != 0)
 		{
-			if(USE_KHEAP)
+#if USE_KHEAP
 			{
 				kfree((void*)kheap_virtual_address(EXTRACT_ADDRESS(frames_storage[i])));
 			}
-			else
+#else
 			{
 				free_frame(to_frame_info(EXTRACT_ADDRESS(frames_storage[i])));
 			}
+#endif
 			frames_storage[i] = 0;
 		}
 	}
@@ -1287,3 +1191,7 @@ uint32 isKHeapPlacementStrategyWORSTFIT(){if(_KHeapPlacementStrategy == KHP_PLAC
 
 
 
+void __new(struct Env* e, uint32 virtual_address, uint32 size)
+{
+
+}

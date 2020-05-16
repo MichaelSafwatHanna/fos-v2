@@ -10,8 +10,6 @@
 //#include <inc/memlayout.h>
 #include <inc/environment_definitions.h>
 
-//max number of shared objects
-uint32 MAX_SHARES ;
 
 struct Share
 {
@@ -39,8 +37,11 @@ struct Share
 
 //array of all shared objects
 #if USE_KHEAP == 0
-	struct Share shares[10] ;
+	//max number of shared objects
+	#define MAX_SHARES 100
+	struct Share shares[MAX_SHARES] ;
 #else
+	uint32 MAX_SHARES ;
 	struct Share *shares;
 #endif
 

@@ -40,7 +40,8 @@ extern struct Env *curenv;	        // Current environment
 struct UserProgramInfo*  get_user_program_info(char* user_program_name);
 struct UserProgramInfo* get_user_program_info_by_env(struct Env* e);
 //2016
-struct Env* env_create(char* user_program_name, unsigned int page_WS_size, unsigned int percent_WS_pages_to_remove);
+//2020
+struct Env* env_create(char* user_program_name, unsigned int page_WS_size, unsigned int LRU_second_list_size, unsigned int percent_WS_pages_to_remove);
 void	start_env_free(struct Env *e);
 
 //2015
@@ -59,5 +60,6 @@ void	env_init(void);
 void	env_run(struct Env *e) __attribute__((noreturn));
 void	env_pop_tf(struct Trapframe *tf) __attribute__((noreturn));
 void env_run_cmd_prmpt();
+
 
 #endif // !FOS_KERN_ENV_H

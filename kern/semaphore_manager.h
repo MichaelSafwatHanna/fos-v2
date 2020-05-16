@@ -12,8 +12,6 @@
 #include <kern/sched.h>
 
 
-//max number of semaphores
-uint32 MAX_SEMAPHORES;
 
 struct Semaphore
 {
@@ -35,8 +33,11 @@ struct Semaphore
 
 // Array of all Semaphores
 #if USE_KHEAP == 0
-	struct Semaphore semaphores[10] ;
+	//max number of semaphores
+	#define MAX_SEMAPHORES 300
+	struct Semaphore semaphores[MAX_SEMAPHORES] ;
 #else
+	uint32 MAX_SEMAPHORES;
 	struct Semaphore *semaphores;
 #endif
 

@@ -169,7 +169,7 @@ static int __sys_allocate_page(void *va, int perm)
 
 	uint32 physical_address = to_physical_address(ptr_frame_info) ;
 
-	if(USE_KHEAP)
+	#if USE_KHEAP
 	{
 		//FIX: we should implement a better solution for this, but for now
 		//		we are using an unsed VA in the invalid area of kernel at 0xef800000 (the current USER_LIMIT)
@@ -185,11 +185,11 @@ static int __sys_allocate_page(void *va, int perm)
 		//return it to the original status
 		ptr_frame_info->references -= 1;
 	}
-	else
+	#else
 	{
 		memset(STATIC_KERNEL_VIRTUAL_ADDRESS(physical_address), 0, PAGE_SIZE);
 	}
-
+	#endif
 	r = map_frame(e->env_page_directory, ptr_frame_info, va, perm) ;
 	if (r == E_NO_MEM)
 	{
@@ -258,7 +258,7 @@ uint32 sys_calculate_free_frames()
 uint32 sys_calculate_modified_frames()
 {
 	struct freeFramesCounters counters = calculate_available_frames();
-	//cprintf("================ Modified Frames = %d\n", counters.modified) ;
+	//	cprintf("================ Modified Frames = %d\n", counters.modified) ;
 	return counters.modified;
 }
 
@@ -300,6 +300,12 @@ void sys_freeMem(uint32 virtual_address, uint32 size)
 void sys_allocateMem(uint32 virtual_address, uint32 size)
 {
 	allocateMem(curenv, virtual_address, size);
+	return;
+}
+
+void sys_new(uint32 virtual_address, uint32 size)
+{
+	__new(curenv, virtual_address, size);
 	return;
 }
 
@@ -373,10 +379,10 @@ uint32 sys_getMaxShares()
 }
 
 //=========
-
-int sys_create_env(char* programName, unsigned int page_WS_size, unsigned int percent_WS_pages_to_remove)
+//New update in 2020
+int sys_create_env(char* programName, unsigned int page_WS_size,unsigned int LRU_second_list_size, unsigned int percent_WS_pages_to_remove)
 {
-	struct Env* env =  env_create(programName, page_WS_size, percent_WS_pages_to_remove);
+	struct Env* env =  env_create(programName, page_WS_size, LRU_second_list_size, percent_WS_pages_to_remove);
 	if(env == NULL)
 	{
 		return E_ENV_CREATION_ERROR;
@@ -484,6 +490,97 @@ uint32 sys_get_heap_strategy()
 void sys_set_uheap_strategy(uint32 heapStrategy)
 {
 	_UHeapPlacementStrategy = heapStrategy;
+}
+
+//2020
+int sys_check_LRU_lists(uint32* active_list_content, uint32* second_list_content, int actual_active_list_size, int actual_second_list_size)
+{
+	struct Env* env = curenv;
+	int active_list_validation = 1;
+	int second_list_validation = 1;
+	struct WorkingSetElement* ptr_WS_element;
+
+	//1- Check active list content if not null
+	if(active_list_content != NULL)
+	{
+		int idx_active_list = 0;
+		LIST_FOREACH(ptr_WS_element, &(env->ActiveList))
+		{
+			if (ROUNDDOWN(ptr_WS_element->virtual_address, PAGE_SIZE) != ROUNDDOWN(active_list_content[idx_active_list], PAGE_SIZE))
+			{
+				active_list_validation = 0;
+				break;
+			}
+			idx_active_list++;
+		}
+		if(LIST_SIZE(&env->ActiveList) != actual_active_list_size)
+		{
+			active_list_validation = 0;
+
+		}
+	}
+
+	//2- Check second chance list content if not null
+	if(second_list_content != NULL)
+	{
+		int idx_second_list = 0;
+		LIST_FOREACH(ptr_WS_element, &(env->SecondList))
+		{
+			if (ROUNDDOWN(ptr_WS_element->virtual_address, PAGE_SIZE) != ROUNDDOWN(second_list_content[idx_second_list], PAGE_SIZE))
+			{
+				second_list_validation = 0;
+				break;
+			}
+			idx_second_list++;
+		}
+		if(LIST_SIZE(&env->SecondList) != actual_second_list_size)
+			second_list_validation = 0;
+	}
+	return active_list_validation&second_list_validation;
+}
+
+
+
+//2020
+int sys_check_LRU_lists_free(uint32* list_content, int list_size)
+{
+	struct Env* env = curenv;
+	int list_validation_count = 0;
+	struct WorkingSetElement* ptr_WS_element;
+
+
+	LIST_FOREACH(ptr_WS_element, &(env->ActiveList))
+	{
+		for(int var = 0; var < list_size; var++)
+		{
+			if (ROUNDDOWN(ptr_WS_element->virtual_address, PAGE_SIZE) == ROUNDDOWN(list_content[var], PAGE_SIZE))
+			{
+				list_validation_count++;
+				break;
+			}
+		}
+		if(list_validation_count > 0)
+			return list_validation_count;
+	}
+
+
+	LIST_FOREACH(ptr_WS_element, &(env->SecondList))
+	{
+		for(int var = 0; var < list_size; var++)
+		{
+			if (ROUNDDOWN(ptr_WS_element->virtual_address, PAGE_SIZE) == ROUNDDOWN(list_content[var], PAGE_SIZE))
+			{
+				list_validation_count++;
+				break;
+			}
+		}
+		if(list_validation_count > 0)
+			return list_validation_count;
+
+	}
+
+
+	return list_validation_count;
 }
 
 
@@ -622,7 +719,7 @@ uint32 syscall(uint32 syscallno, uint32 a1, uint32 a2, uint32 a3, uint32 a4, uin
 		break;
 
 	case SYS_create_env:
-		return sys_create_env((char*)a1, (uint32)a2, (uint32)a3);
+		return sys_create_env((char*)a1, (uint32)a2, (uint32)a3, (uint32)a4);
 		break;
 
 	case SYS_free_env:
@@ -678,6 +775,17 @@ uint32 syscall(uint32 syscallno, uint32 a1, uint32 a2, uint32 a3, uint32 a4, uin
 		sys_set_uheap_strategy(a1);
 		return 0;
 
+	case SYS_check_LRU_lists:
+		return sys_check_LRU_lists((uint32*)a1, (uint32*)a2, (int)a3, (int)a4);
+
+	case SYS_check_LRU_lists_free:
+		return sys_check_LRU_lists_free((uint32*)a1, (int)a2);
+
+	case SYS_new:
+		sys_new(a1, (uint32)a2);
+		return 0;
+		break;
+
 	case NSYSCALLS:
 		return 	-E_INVAL;
 		break;
@@ -685,4 +793,3 @@ uint32 syscall(uint32 syscallno, uint32 a1, uint32 a2, uint32 a3, uint32 a4, uin
 	//panic("syscall not implemented");
 	return -E_INVAL;
 }
-

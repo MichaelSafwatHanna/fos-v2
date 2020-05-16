@@ -33,13 +33,12 @@ KERN_SRCFILES :=	kern/entry.S \
 			kern/shared_memory_manager.c \
 			kern/kheap.c \
 			kern/test_kheap.c \
-			kern/utilities.c \
-			kern/priority_manager.c \
-			kern/test_priority.c \
 			lib/printfmt.c \
 			lib/readline.c \
 			lib/string.c \
-			lib/disk.c
+			lib/disk.c \
+			kern/utilities.c \
+			kern/priority_manager.c \
 
 # Only build files if they exist.
 KERN_SRCFILES := $(wildcard $(KERN_SRCFILES))

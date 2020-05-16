@@ -33,8 +33,9 @@ libmain(int argc, char **argv)
 	sys_disable_interrupt();
 	cprintf("**************************************\n");
 	cprintf("Num of PAGE faults = %d, modif = %d\n", myEnv->pageFaultsCounter, myEnv->nModifiedPages);
+	cprintf("# PAGE IN (from disk) = %d, # PAGE OUT (on disk) = %d, # NEW PAGE ADDED (on disk) = %d\n", myEnv->nPageIn, myEnv->nPageOut, myEnv->nNewPageAdded);
 	//cprintf("Num of freeing scarce memory = %d, freeing full working set = %d\n", myEnv->freeingScarceMemCounter, myEnv->freeingFullWSCounter);
-	cprintf("Num of clocks = %d\n", myEnv->nClocks);
+	//cprintf("Num of clocks = %d\n", myEnv->nClocks);
 	cprintf("**************************************\n");
 	sys_enable_interrupt();
 

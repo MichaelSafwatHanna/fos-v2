@@ -137,7 +137,7 @@ memmove(void *dst, const void *src, uint32 n)
 {
 	const char *s;
 	char *d;
-	
+
 	s = src;
 	d = dst;
 	if (s < d && s + n > d) {
@@ -284,22 +284,22 @@ int strsplit(char *string, char *SPLIT_CHARS, char **argv, int * argc)
 	// Parse the command string into splitchars-separated arguments
 	*argc = 0;
 	(argv)[*argc] = 0;
-	while (1) 
+	while (1)
 	{
 		// trim splitchars
 		while (*string && strchr(SPLIT_CHARS, *string))
 			*string++ = 0;
-		
+
 		//if the command string is finished, then break the loop
 		if (*string == 0)
 			break;
 
 		//check current number of arguments
-		if (*argc == MAX_ARGUMENTS-1) 
+		if (*argc == MAX_ARGUMENTS-1)
 		{
 			return 0;
 		}
-		
+
 		// save the previous argument and scan past next arg
 		(argv)[(*argc)++] = string;
 		while (*string && !strchr(SPLIT_CHARS, *string))

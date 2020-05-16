@@ -36,7 +36,6 @@ int	ide_read(uint32 secno, void *dst, uint32 nsecs)
 
 	assert(nsecs <= 256);
 
-	//TODO: This BUSY-WAIT should be replaced by Interrupt to allow the OS to schedule another process till the device become ready [el7 :)]
 	ide_wait_ready(0);
 
 	outb(0x1F2, nsecs);

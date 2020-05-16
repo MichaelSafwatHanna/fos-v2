@@ -8,5 +8,5 @@
 
 void set_program_priority(struct Env* env, int priority)
 {
-	panic("Program Priority function is not implemented yet\n");
+	panic("set_program_priority() is not implemented yet...!!");
 }

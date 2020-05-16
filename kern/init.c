@@ -56,16 +56,18 @@ void FOS_initialize()
 	// Lab 3 user environment initialization functions
 	env_init();
 	idt_init();
-	setPageReplacmentAlgorithmModifiedCLOCK();
-	setUHeapPlacementStrategyBESTFIT();
-	setKHeapPlacementStrategyBESTFIT();
+	//setPageReplacmentAlgorithmLRU(PG_REP_LRU_TIME_APPROX);
+	setPageReplacmentAlgorithmFIFO();
+	setUHeapPlacementStrategyFIRSTFIT();
+	setKHeapPlacementStrategyFIRSTFIT();
 	enableBuffering(0);
 	//enableModifiedBuffer(1) ;
 	enableModifiedBuffer(0) ;
-	setModifiedBufferLength(1000);
+	setModifiedBufferLength(50);
 
-	//TODO: remove this line
-	chksch(1);
+	//chksch(1);
+	chksch(0);
+
 	// Lab 4 multitasking initialization functions
 	pic_init();
 	sched_init() ;
@@ -97,10 +99,12 @@ void FOS_initialize()
 		//cprintf("Int Flag before = %d\n", read_eflags() & FL_IF) ;
 
 	//Project initializations
+#if USE_KHEAP
 	MAX_SHARES = (KERNEL_SHARES_ARR_INIT_SIZE) / sizeof(struct Share);
-	create_shares_array(MAX_SHARES);
-
 	MAX_SEMAPHORES = (KERNEL_SEMAPHORES_ARR_INIT_SIZE) / sizeof(struct Semaphore);
+#endif
+
+	create_shares_array(MAX_SHARES);
 	create_semaphores_array(MAX_SEMAPHORES);
 
 	// start the kernel command prompt.

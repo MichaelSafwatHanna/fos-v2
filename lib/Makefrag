@@ -9,6 +9,7 @@ LIB_SRCFILES :=		lib/console.c \
 			lib/readline.c \
 			lib/string.c \
 			lib/uheap.c \
+			lib/ubuddy.c \
 			lib/syscall.c \
 			lib/concurrency.c
 

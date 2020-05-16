@@ -31,44 +31,6 @@ void init_queue(struct Env_Queue* queue)
 	}
 }
 
-int queue_size(struct Env_Queue* queue)
-{
-	if(queue != NULL)
-	{
-		return LIST_SIZE(queue);
-	}
-	else
-	{
-		return 0;
-	}
-}
-
-void enqueue(struct Env_Queue* queue, struct Env* env)
-{
-	if(env != NULL)
-	{
-		LIST_INSERT_HEAD(queue, env);
-	}
-}
-
-struct Env* dequeue(struct Env_Queue* queue)
-{
-	struct Env* envItem = LIST_LAST(queue);
-	if (envItem != NULL)
-	{
-		LIST_REMOVE(queue, envItem);
-	}
-	return envItem;
-}
-
-void remove_from_queue(struct Env_Queue* queue, struct Env* e)
-{
-	if (e != NULL)
-	{
-		LIST_REMOVE(queue, e);
-	}
-}
-
 struct Env* find_env_in_queue(struct Env_Queue* queue, uint32 envID)
 {
 	struct Env * ptr_env=NULL;
@@ -83,40 +45,51 @@ struct Env* find_env_in_queue(struct Env_Queue* queue, uint32 envID)
 }
 //==================================================================================//
 
-
-//==================================================================================//
-//============================= NOT REQUIRED FUNCTIONS =================================//
-//==================================================================================//
-
 void sched_init_MLFQ(uint8 numOfLevels, uint8 *quantumOfEachLevel)
 {
 	//=========================================
 	//DON'T CHANGE THESE LINES=================
-	sched_delete_ready_queues();
+	//sched_delete_ready_queues();
 	scheduler_status = SCH_STOPPED;
 	scheduler_method = SCH_MLFQ;
 	//=========================================
 	//=========================================
-	panic("This function is not required");
+
+	// Write your code here, remove the panic and write your code
+	panic("sched_init_MLFQ() is not implemented yet...!!");
+
+	//refer to the documentation for details
+
+	num_of_ready_queues = numOfLevels;
+
+	//[1] Initialize the ready queues using init_queue()
+	//[2] Initialize the "quantums" array by the given quantums in "quantumOfEachLevel[]"
+	//[3] Set the CPU quantum by the first level one
 }
 
 struct Env* fos_scheduler_MLFQ()
 {
-	panic("This function is not required");
+	// Write your code here, remove the panic and write your code
+	panic("fos_scheduler_MLFQ() is not implemented yet...!!");
+
+	//refer to the documentation for details
+
+	//Apply the MLFQ with the specified levels to pick up the next environment
+	//Note: the "curenv" (if exist) should be placed in its correct queue
+
+	//[1] If the current environment (curenv) exists, place it in the suitable queue
+	//[2] Search for the next env in the queues according to their priorities (first is highest)
+	//[3] If next env is found: Set the CPU quantum by the quantum of the selected level
+	//							,remove the selected env from its queue and return it
+	//	  Else, return NULL
+
 	return NULL;
 }
-
-
-//==================================================================================//
-//==================================================================================//
-//==================================================================================//
-
 
 
 void
 fos_scheduler(void)
 {
-
 	chk1();
 	scheduler_status = SCH_STARTED;
 
@@ -134,11 +107,13 @@ fos_scheduler(void)
 		//If the curenv is still exist, then insert it again in the ready queue
 		if (curenv != NULL)
 		{
-			enqueue(&(env_ready_queues[0]), curenv);
+			LIST_INSERT_HEAD(&(env_ready_queues[0]), curenv);
 		}
 
 		//Pick the next environment from the ready queue
-		next_env = dequeue(&(env_ready_queues[0]));
+		next_env = LIST_LAST(&(env_ready_queues[0]));
+		if (next_env != NULL)
+			LIST_REMOVE(&(env_ready_queues[0]), next_env);
 
 		//Reset the quantum
 		//2017: Reset the value of CNT0 for the next clock interval
@@ -157,12 +132,15 @@ fos_scheduler(void)
 	//Then: reset it again
 	struct Env* old_curenv = curenv;
 	curenv = next_env ;
-	chk2(next_env);
+	chk2(next_env) ;
 	curenv = old_curenv;
 
-	//cprintf("Scheduler select program '%s'\n", next_env->prog_name);
+	//sched_print_all();
+
 	if(next_env != NULL)
 	{
+//		cprintf("\nScheduler select program '%s' [%d]... counter = %d\n", next_env->prog_name, next_env->env_id, kclock_read_cnt0());
+//		cprintf("Q0 = %d, Q1 = %d, Q2 = %d, Q3 = %d\n", queue_size(&(env_ready_queues[0])), queue_size(&(env_ready_queues[1])), queue_size(&(env_ready_queues[2])), queue_size(&(env_ready_queues[3])));
 		env_run(next_env);
 	}
 	else
@@ -184,14 +162,16 @@ fos_scheduler(void)
 
 void sched_init_RR(uint8 quantum)
 {
-	//sched_delete_ready_queues();
 	scheduler_status = SCH_STOPPED;
 	scheduler_method = SCH_RR;
 
 	// Create 1 ready queue for the RR
 	num_of_ready_queues = 1;
-	//env_ready_queues = kmalloc(sizeof(struct Env_Queue));
-	//quantums = kmalloc(num_of_ready_queues * sizeof(uint8)) ;
+#if USE_KHEAP
+	sched_delete_ready_queues();
+	env_ready_queues = kmalloc(sizeof(struct Env_Queue));
+	quantums = kmalloc(num_of_ready_queues * sizeof(uint8)) ;
+#endif
 	quantums[0] = quantum;
 	kclock_set_quantum(quantums[0]);
 	init_queue(&(env_ready_queues[0]));
@@ -216,39 +196,15 @@ void sched_delete_ready_queues()
 	if (quantums != NULL)
 	kfree(quantums);
 }
-void sched_insert_ready(struct Env* env)
-{
-	if(env != NULL)
-	{
-		env->env_status = ENV_READY ;
-		enqueue(&(env_ready_queues[0]), env);
-	}
-}
 
 
-void sched_remove_ready(struct Env* env)
-{
-	if(env != NULL)
-	{
-		for (int i = 0 ; i < num_of_ready_queues ; i++)
-		{
-			struct Env * ptr_env = find_env_in_queue(&(env_ready_queues[i]), env->env_id);
-			if (ptr_env != NULL)
-			{
-				LIST_REMOVE(&(env_ready_queues[i]), env);
-				env->env_status = ENV_UNKNOWN;
-				return;
-			}
-		}
-	}
-}
 
 void sched_insert_new(struct Env* env)
 {
 	if(env != NULL)
 	{
 		env->env_status = ENV_NEW ;
-		enqueue(&env_new_queue, env);
+		LIST_INSERT_HEAD(&env_new_queue, env);
 	}
 }
 void sched_remove_new(struct Env* env)
@@ -266,7 +222,7 @@ void sched_insert_exit(struct Env* env)
 	{
 		if(isBufferingEnabled()) {cleanup_buffers(env);}
 		env->env_status = ENV_EXIT ;
-		enqueue(&env_exit_queue, env);
+		LIST_INSERT_HEAD(&env_exit_queue, env);
 	}
 }
 void sched_remove_exit(struct Env* env)
@@ -330,7 +286,8 @@ void sched_run_all()
 	LIST_FOREACH(ptr_env, &env_new_queue)
 	{
 		sched_remove_new(ptr_env);
-		sched_insert_ready(ptr_env);
+		ptr_env->env_status = ENV_READY ;
+		LIST_INSERT_HEAD(&(env_ready_queues[0]), ptr_env);
 	}
 	/*2015*///if scheduler not run yet, then invoke it!
 	if (scheduler_status == SCH_STOPPED)
@@ -426,8 +383,8 @@ void sched_run_env(uint32 envId)
 		if(ptr_env->env_id == envId)
 		{
 			sched_remove_new(ptr_env);
-			sched_insert_ready(ptr_env);
-
+			ptr_env->env_status = ENV_READY ;
+			LIST_INSERT_HEAD(&(env_ready_queues[0]), ptr_env);
 			/*2015*///if scheduler not run yet, then invoke it!
 			if (scheduler_status == SCH_STOPPED)
 			{
@@ -593,18 +550,14 @@ void sched_kill_env(uint32 envId)
 			start_env_free(ptr_env);
 			cprintf("DONE\n");
 			found = 1;
+			//If it's the curenv, then reset it and reinvoke the scheduler
+			//as there's no meaning to return back to a killed env
+			//lcr3(K_PHYSICAL_ADDRESS(ptr_page_directory));
+			lcr3(phys_page_directory);
+			curenv = NULL;
+			fos_scheduler();
 		}
 	}
-	//If it's the curenv, then reset it and reinvoke the scheduler
-	//as there's no meaning to return back to a killed env
-	if (curenv->env_id == envId)
-	{
-		//lcr3(K_PHYSICAL_ADDRESS(ptr_page_directory));
-		lcr3(phys_page_directory);
-		curenv = NULL;
-		fos_scheduler();
-	}
-
 }
 
 
@@ -612,56 +565,16 @@ void clock_interrupt_handler()
 {
 	//cputchar('i');
 
-	if(isPageReplacmentAlgorithmLRU())
+	if(isPageReplacmentAlgorithmLRUTimeStamp())
 	{
 		update_WS_time_stamps();
 	}
 	//cprintf("Clock Handler\n") ;
 	fos_scheduler();
 }
-/*
-void on_clock_update_WS_time_stamps()
-{
-	//cprintf("Updating time stamps\n");
 
-	struct Env *curr_env_ptr = NULL;
 
-	LIST_FOREACH(curr_env_ptr, &env_ready_queue)
-	{
-		int i ;
-		for (i = 0 ; i < PAGE_WS_MAX_SIZE; i++)
-		{
-			if( curr_env_ptr->ptr_pageWorkingSet[i].empty != 1)
-			{
-				//update the time if the page was referenced
-				uint32 page_va = curr_env_ptr->ptr_pageWorkingSet[i].virtual_address ;
-				uint32 perm = pt_get_page_permissions(curr_env_ptr, page_va) ;
-				if (perm & PERM_USED)
-				{
-					curr_env_ptr->ptr_pageWorkingSet[i].time_stamp = time ;
-					pt_set_page_permissions(curr_env_ptr, page_va, 0 , PERM_USED) ;
-				}
-			}
-		}
 
-		{
-			//uint32 eflags_val = read_eflags();
-			//write_eflags(eflags_val & (~FL_IF));
-
-			//if((curr_env_ptr->pageFaultsCounter-old_pf_counter) > 0)
-			{
-				//cprintf("[%s]: last clock # of PFs  = %d, timenow = %d\n", curr_env_ptr->prog_name ,curr_env_ptr->pageFaultsCounter-old_pf_counter, time);
-			}
-			//mydblchk += curr_env_ptr->pageFaultsCounter-old_pf_counter;
-			old_pf_counter = curr_env_ptr->pageFaultsCounter;
-
-			//eflags_val = read_eflags();
-			//write_eflags(eflags_val | (FL_IF));
-		}
-	}
-
-}
- */
 void update_WS_time_stamps()
 {
 	struct Env *curr_env_ptr = curenv;
@@ -672,27 +585,26 @@ void update_WS_time_stamps()
 			int i ;
 			for (i = 0 ; i < (curr_env_ptr->page_WS_max_size); i++)
 			{
-				if( curr_env_ptr->ptr_pageResidentSet[i].empty != 1)
+				if( curr_env_ptr->ptr_pageWorkingSet[i].empty != 1)
 				{
 					//update the time if the page was referenced
-					uint32 page_va = curr_env_ptr->ptr_pageResidentSet[i].virtual_address ;
+					uint32 page_va = curr_env_ptr->ptr_pageWorkingSet[i].virtual_address ;
+					//uint32 perm = pt_get_page_permissions(curr_env_ptr, page_va) ;
+					uint32 *ptr_table = NULL;
+					get_page_table(curr_env_ptr->env_page_directory,(void*) page_va, &ptr_table);
+					uint32 perm = ptr_table[PTX(page_va)];
 
-					uint32* ptr_page_table = NULL;
-					get_page_table(curenv->env_page_directory, (void*) page_va, &ptr_page_table);
-					uint32 perm = ptr_page_table[PTX(page_va)] & 0x00000FFF;
-					uint32 oldTimeStamp = curr_env_ptr->ptr_pageResidentSet[i].time_stamp;
+					uint32 oldTimeStamp = curr_env_ptr->ptr_pageWorkingSet[i].time_stamp;
 
 					if (perm & PERM_USED)
 					{
-						curr_env_ptr->ptr_pageResidentSet[i].time_stamp = (oldTimeStamp>>2) | 0x80000000;
-						uint32* ptr_page_table_va = NULL;
-						get_page_table(curr_env_ptr->env_page_directory, (void*)page_va, &ptr_page_table_va);
-						ptr_page_table_va[PTX(page_va)] = ptr_page_table_va[PTX(page_va)] & ~PERM_USED;
-
+						curr_env_ptr->ptr_pageWorkingSet[i].time_stamp = (oldTimeStamp>>2) | 0x80000000;
+						//pt_set_page_permissions(curr_env_ptr, page_va, 0 , PERM_USED) ;
+						ptr_table[PTX(page_va)] &= ~PERM_USED;
 					}
 					else
 					{
-						curr_env_ptr->ptr_pageResidentSet[i].time_stamp = (oldTimeStamp>>2);
+						curr_env_ptr->ptr_pageWorkingSet[i].time_stamp = (oldTimeStamp>>2);
 					}
 				}
 			}
@@ -722,5 +634,3 @@ void update_WS_time_stamps()
 		}
 	}
 }
-
-

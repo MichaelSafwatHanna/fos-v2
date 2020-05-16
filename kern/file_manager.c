@@ -162,7 +162,7 @@ int get_disk_page_table(uint32 *ptr_disk_page_directory, const void *virtual_add
 		if (create)
 		{
 
-			if(USE_KHEAP)
+			#if USE_KHEAP
 			{
 				*ptr_disk_page_table = (uint32*)kmalloc(PAGE_SIZE);
 				if(*ptr_disk_page_table == NULL)
@@ -173,7 +173,7 @@ int get_disk_page_table(uint32 *ptr_disk_page_directory, const void *virtual_add
 						kheap_physical_address((unsigned int)*ptr_disk_page_table)
 						,PERM_PRESENT);
 			}
-			else
+			#else
 			{
 				struct Frame_Info* ptr_frame_info;
 				allocate_frame(&ptr_frame_info) ;
@@ -184,6 +184,7 @@ int get_disk_page_table(uint32 *ptr_disk_page_directory, const void *virtual_add
 				ptr_frame_info->references = 1;
 				ptr_disk_page_directory[PDX(virtual_address)] = CONSTRUCT_ENTRY(phys_page_table,PERM_PRESENT);
 			}
+			#endif
 			//initialize new page table by 0's
 			memset(*ptr_disk_page_table , 0, PAGE_SIZE);
 
@@ -205,7 +206,13 @@ int pf_add_empty_env_page( struct Env* ptr_env, uint32 virtual_address, uint8 in
 {
 	//2016: FIX:
 	if (initializeByZero)
+	{
+		//2020
+		if (virtual_address > USTACKBOTTOM && virtual_address < USTACKTOP - ptr_env->initNumStackPages * PAGE_SIZE)
+			ptr_env->nNewPageAdded++ ;
+		//======================
 		return pf_add_env_page(ptr_env, virtual_address, ptr_zero_page);
+	}
 
 	uint32 *ptr_disk_page_table;
 	assert((uint32)virtual_address < KERNEL_BASE);
@@ -274,7 +281,7 @@ int pf_update_env_page(struct Env* ptr_env, void *virtual_address, struct Frame_
 	if( dfn == 0) return E_PAGE_NOT_EXIST_IN_PF;
 
 	int ret;
-	if(USE_KHEAP)
+#if USE_KHEAP
 	{
 		//FIX: we should implement a better solution for this, but for now
 			//		we are using an unused VA in the invalid area of kernel at 0xef800000 (the current USER_LIMIT)
@@ -289,11 +296,16 @@ int pf_update_env_page(struct Env* ptr_env, void *virtual_address, struct Frame_
 
 		//cprintf("[%s] updating page\n",ptr_env->prog_name);
 	}
-	else
+#else
 	{
 		ret = write_disk_page(dfn, STATIC_KERNEL_VIRTUAL_ADDRESS(to_physical_address(modified_page_frame_info)));
 		//cprintf("[%s] finished updating page\n",ptr_env->prog_name);
 	}
+#endif
+	//2020
+	ptr_env->nPageOut++ ;
+	//======================
+
 	return ret;
 }
 /*
@@ -335,9 +347,14 @@ int pf_read_env_page(struct Env* ptr_env, void *virtual_address)
 	//reset modified bit to 0: because FOS copies the placed or replaced page from
 	//HD to memory, the page modified bit is set to 1, but we want the modified bit to be
 	// affected only by "user code" modifications, not our (FOS kernel) modifications
-	uint32* ptr_page_table = NULL;
-	get_page_table(curenv->env_page_directory, (void*)virtual_address, &ptr_page_table);
-	ptr_page_table[PTX(virtual_address)] = ptr_page_table[PTX(virtual_address)] & ~PERM_MODIFIED;
+	//pt_set_page_permissions(curenv, (uint32)virtual_address, 0, PERM_MODIFIED);
+	uint32 *ptr_table = NULL;
+	get_page_table(curenv->env_page_directory,(void*) virtual_address, &ptr_table);
+	ptr_table[PTX(virtual_address)] &= ~PERM_MODIFIED;
+
+	//2020
+	ptr_env->nPageIn++ ;
+	//======================
 
 	return disk_read_error;
 }
@@ -374,14 +391,15 @@ void pf_free_env(struct Env* ptr_env)
 		// find the pa and va of the page table
 		uint32 pa = EXTRACT_ADDRESS(ptr_env->disk_env_pgdir[pdeno]);
 		uint32 *pt;
-		if(USE_KHEAP)
+		#if USE_KHEAP
 		{
 			pt = (uint32*) kheap_virtual_address(pa);
 		}
-		else
+		#else
 		{
 			pt = (uint32*) STATIC_KERNEL_VIRTUAL_ADDRESS(pa);
 		}
+		#endif
 		// unmap all PTEs in this page table
 		uint32 pteno;
 		for (pteno = 0; pteno < 1024; pteno++)
@@ -395,25 +413,27 @@ void pf_free_env(struct Env* ptr_env)
 
 		// free the disk page table itself
 		ptr_env->disk_env_pgdir[pdeno] = 0;
-		if(USE_KHEAP)
+		#if USE_KHEAP
 		{
 			kfree(pt);
 		}
-		else
+		#else
 		{
 			decrement_references(to_frame_info(pa));
 		}
+		#endif
 	}
 
 	// free the disk page directory of the environment
-	if(USE_KHEAP)
+	#if USE_KHEAP
 	{
 		kfree(ptr_env->disk_env_pgdir);
 	}
-	else
+	#else
 	{
 		decrement_references(to_frame_info(ptr_env->disk_env_pgdir_PA));
 	}
+	#endif
 	ptr_env->disk_env_pgdir = 0;
 	ptr_env->disk_env_pgdir_PA = 0;
 
@@ -424,14 +444,15 @@ void pf_free_env(struct Env* ptr_env)
 	__pf_remove_env_all_tables(ptr_env);
 
 
-	if(USE_KHEAP)
+	#if USE_KHEAP
 	{
 		kfree(ptr_env->disk_env_tabledir);
 	}
-	else
+	#else
 	{
 		decrement_references(to_frame_info(ptr_env->disk_env_tabledir_PA));
 	}
+	#endif
 	ptr_env->disk_env_tabledir = 0;
 	ptr_env->disk_env_tabledir_PA = 0;
 
@@ -444,7 +465,7 @@ int get_disk_page_directory(struct Env* ptr_env, uint32** ptr_disk_page_director
 	if(*ptr_disk_page_directory == 0)
 	{
 		//	LOG_STATMENT(cprintf(">>>>>>>>>>>>>> disk directory not found, creating one ...\n"););
-		if(USE_KHEAP)
+		#if USE_KHEAP
 		{
 			*ptr_disk_page_directory = kmalloc(PAGE_SIZE);
 			if(*ptr_disk_page_directory == NULL)
@@ -453,7 +474,7 @@ int get_disk_page_directory(struct Env* ptr_env, uint32** ptr_disk_page_director
 			}
 			ptr_env->disk_env_pgdir_PA = kheap_physical_address((unsigned int)*ptr_disk_page_directory);
 		}
-		else
+		#else
 		{
 			int r;
 			struct Frame_Info *p = NULL;
@@ -467,7 +488,7 @@ int get_disk_page_directory(struct Env* ptr_env, uint32** ptr_disk_page_director
 			*ptr_disk_page_directory = STATIC_KERNEL_VIRTUAL_ADDRESS(to_physical_address(p));
 			ptr_env->disk_env_pgdir_PA = to_physical_address(p);
 		}
-
+		#endif
 		memset(*ptr_disk_page_directory , 0, PAGE_SIZE);
 
 		//	LOG_STATMENT(cprintf(">>>>>>>>>>>>>> Disk directory created at %x", *ptr_disk_page_directory));
@@ -490,15 +511,15 @@ int pf_calculate_allocated_pages(struct Env* ptr_env)
 
 		// find the pa and va of the page table
 		pa = EXTRACT_ADDRESS(ptr_env->disk_env_pgdir[pdIndex]);
-		if(USE_KHEAP)
+		#if USE_KHEAP
 		{
 			pt = (uint32*) kheap_virtual_address(pa);
 		}
-		else
+		#else
 		{
 			pt = (uint32*) STATIC_KERNEL_VIRTUAL_ADDRESS(pa);
 		}
-
+		#endif
 
 		// unmap all PTEs in this page table
 		uint32 ptIndex;
@@ -538,7 +559,7 @@ int get_disk_table_directory(struct Env* ptr_env, uint32** ptr_disk_table_direct
 	if(*ptr_disk_table_directory == 0)
 	{
 		//	LOG_STATMENT(cprintf(">>>>>>>>>>>>>> disk directory not found, creating one ...\n"););
-		if(USE_KHEAP)
+		#if USE_KHEAP
 		{
 			*ptr_disk_table_directory = kmalloc(PAGE_SIZE);
 			if(*ptr_disk_table_directory == NULL)
@@ -547,7 +568,7 @@ int get_disk_table_directory(struct Env* ptr_env, uint32** ptr_disk_table_direct
 			}
 			ptr_env->disk_env_tabledir_PA = kheap_physical_address((uint32)*ptr_disk_table_directory);
 		}
-		else
+		#else
 		{
 			int r;
 			struct Frame_Info *p = NULL;
@@ -561,7 +582,7 @@ int get_disk_table_directory(struct Env* ptr_env, uint32** ptr_disk_table_direct
 			*ptr_disk_table_directory = STATIC_KERNEL_VIRTUAL_ADDRESS(to_physical_address(p));
 			ptr_env->disk_env_tabledir_PA = to_physical_address(p);
 		}
-
+		#endif
 		memset(*ptr_disk_table_directory , 0, PAGE_SIZE);
 
 		//	LOG_STATMENT(cprintf(">>>>>>>>>>>>>> Disk directory created at %x", *ptr_disk_page_directory));

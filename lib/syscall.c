@@ -219,11 +219,11 @@ uint32 	sys_getMaxShares()
 	return syscall(SYS_get_max_shares,0, 0, 0, 0, 0);
 }
 
-int
-sys_create_env(char* programName, unsigned int page_WS_size, unsigned int percent_WS_pages_to_remove)
+int sys_create_env(char* programName, unsigned int page_WS_size,unsigned int LRU_second_list_size,unsigned int percent_WS_pages_to_remove)
 {
-	return syscall(SYS_create_env,(uint32)programName, page_WS_size, percent_WS_pages_to_remove, 0, 0);
+	return syscall(SYS_create_env,(uint32)programName, (uint32)page_WS_size,(uint32)LRU_second_list_size, (uint32)percent_WS_pages_to_remove, 0);
 }
+
 
 void
 sys_run_env(int32 envId)
@@ -327,3 +327,20 @@ void sys_set_uheap_strategy(uint32 heapStrategy)
 	return ;
 }
 
+//2020
+int sys_check_LRU_lists(uint32* active_list_content, uint32* second_list_content, int actual_active_list_size, int actual_second_list_size)
+{
+	return syscall(SYS_check_LRU_lists, (uint32)active_list_content, (uint32)second_list_content, (uint32)actual_active_list_size, (uint32)actual_second_list_size, 0);
+}
+
+int sys_check_LRU_lists_free(uint32* list_content, int list_size)
+{
+	return syscall(SYS_check_LRU_lists_free, (uint32)list_content, (uint32)list_size , 0, 0, 0);
+}
+
+
+void sys_new(uint32 virtual_address, uint32 size)
+{
+	syscall(SYS_new, virtual_address, size, 0, 0, 0);
+	return ;
+}

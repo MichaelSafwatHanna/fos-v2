@@ -22,8 +22,15 @@ struct Env_Queue env_new_queue;	// queue of all new envs
 //2015:
 struct Env_Queue env_exit_queue;	// queue of all exited envs
 //2018:
-struct Env_Queue env_ready_queues[1];	// Ready queue(s) for the MLFQ or RR
-uint8 quantums[1] ;					// Quantum(s) in ms for each level of the ready queue(s)
+//2020:
+#if USE_KHEAP
+	struct Env_Queue *env_ready_queues;	// Ready queue(s) for the MLFQ or RR
+	uint8 *quantums ;					// Quantum(s) in ms for each level of the ready queue(s)
+#else
+	//RR ONLY
+	struct Env_Queue env_ready_queues[5];	// Ready queue(s) for the RR
+	uint8 quantums[5] ;					// Quantum in ms for RR
+#endif
 uint8 num_of_ready_queues ;			// Number of ready queue(s)
 //===============
 
@@ -43,9 +50,6 @@ void fos_scheduler(void) __attribute__((noreturn));
 
 void sched_init();
 void clock_interrupt_handler();
-void update_WS_time_stamps();
-void sched_insert_ready(struct Env* env);
-void sched_remove_ready(struct Env* env);
 void sched_insert_new(struct Env* env);
 void sched_remove_new(struct Env* env);
 void sched_print_all();
@@ -64,14 +68,11 @@ void sched_kill_all();
 //2018:
 //Declaration of helper functions to deal with the env queues
 void init_queue(struct Env_Queue* queue);
-int queue_size(struct Env_Queue* queue);
-void enqueue(struct Env_Queue* queue, struct Env* env);
-struct Env* dequeue(struct Env_Queue* queue);
 struct Env* find_env_in_queue(struct Env_Queue* queue, uint32 envID);
-void remove_from_queue(struct Env_Queue* queue, struct Env* e);
 void sched_init_RR(uint8 quantum);
 void sched_init_MLFQ(uint8 numOfLevels, uint8 *quantumOfEachLevel);
 uint32 isSchedMethodMLFQ();
 uint32 isSchedMethodRR();
 void sched_exit_all_ready_envs();
+void update_WS_time_stamps();
 #endif	// !FOS_KERN_SCHED_H
