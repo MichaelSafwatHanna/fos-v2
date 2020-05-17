@@ -483,16 +483,45 @@ void table_fault_handler(struct Env * curenv, uint32 fault_va)
 
 //Handle the page fault
 
-void page_fault_handler(struct Env * curenv, uint32 fault_va)
+void page_fault_handler(struct Env *curenv, uint32 fault_va)
 {
-	//TODO: [FINAL_EVAL_2020 - VER_C] - [1] PAGE FAULT HANDLER [PLACEMENT ONLY]
-	// Write your code here, remove the panic and write your code
-	panic("page_fault_handler() is not implemented yet...!!");
+	uint32 page_address = ROUNDDOWN(fault_va, PAGE_SIZE);
 
-	//refer to the documentation for details
+	if (USTACKTOP >= fault_va && fault_va >= USTACKBOTTOM)
+	{
+		int ret = pf_add_empty_env_page(curenv, fault_va, 0);
+		if (ret == E_NO_PAGE_FILE_SPACE)
+		{
+			panic("E_NO_PAGE_FILE_SPACE");
+		}
+	}
 
+	int RS_MAX_SIZE = curenv->page_WS_max_size;
+	int ws_index = curenv->page_last_WS_index;
+	struct WorkingSetElement *ptr_pageWorkingSet = curenv->ptr_pageWorkingSet;
+
+	// Allocate frame for the faulted page
+	struct Frame_Info *frame_info = NULL;
+	int ret = allocate_frame(&frame_info);
+	if (ret == E_NO_MEM)
+		return;
+
+	map_frame(curenv->env_page_directory, frame_info, (void *)fault_va, PERM_PRESENT | PERM_USER | PERM_WRITEABLE);
+	ret = pf_read_env_page(curenv, (void *)fault_va);
+	if (ret == E_PAGE_NOT_EXIST_IN_PF)
+	{
+		panic("Wrong Adress");
+	}
+
+	// Update Working set
+	ptr_pageWorkingSet[ws_index].virtual_address = page_address;
+	ptr_pageWorkingSet[ws_index].empty = 0;
+	ws_index++;
+	if (ws_index == RS_MAX_SIZE)
+		ws_index = 0;
+	
+	curenv->page_last_WS_index = ws_index;
 }
-
 
 void __page_fault_handler_with_buffering(struct Env * curenv, uint32 fault_va)
 {
