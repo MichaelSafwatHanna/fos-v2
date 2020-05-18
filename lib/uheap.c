@@ -1,5 +1,9 @@
 #include <inc/lib.h>
 
+#define HEAP_PAGES_COUNT (USER_HEAP_MAX - USER_HEAP_START) / PAGE_SIZE
+int u_heap_pages[HEAP_PAGES_COUNT]; // 0 -> available, else(size of block) -> not available
+uint32 u_heap_free_space = HEAP_PAGES_COUNT * PAGE_SIZE;
+
 // malloc()
 //	This function use FIRST FIT strategy to allocate space in heap
 //  with the given size and return void pointer to the start of the allocated space
@@ -15,20 +19,63 @@
 //==================================================================================//
 //============================ REQUIRED FUNCTIONS ==================================//
 //==================================================================================//
-void* malloc(uint32 size)
+
+uint32 First_fit_Strategy(int pages_needed)
 {
-	//TODO: [FINAL_EVAL_2020 - VER_C] - [2] USER HEAP [User Side malloc]
-	// Write your code here, remove the panic and write your code
-	panic("malloc() is not implemented yet...!!");
+	int start_index = -1;
+	int end_index = 0;
+	int is_free = 0;
 
-	//refer to the documentation for details
+	for (int i = 0; i < HEAP_PAGES_COUNT; i++)
+	{
+		if (u_heap_pages[i] == 0)
+		{
+			if (is_free == 0)
+				start_index = i;
+			is_free = 1;
+			if (pages_needed == ((i - start_index) + 1))
+			{
+				end_index = i;
+				break;
+			}
+		}
+		else
+		{
+			is_free = 0;
+		}
+	}
 
-	//This function should find the space of the required range by either:
-	//1) FIRST FIT strategy
-	//2) BEST FIT strategy
+	if (is_free == 0)
+		return -1; // No Free Memory
 
+	for (int i = start_index; i <= end_index; i++)
+	{
+		u_heap_pages[i] = pages_needed * PAGE_SIZE;
+	}
 
-	return NULL;
+	return (start_index * PAGE_SIZE) + USER_HEAP_START;
+}
+
+void *malloc(uint32 size)
+{
+	size = ROUNDUP(size, PAGE_SIZE);
+	if (size >= HEAP_PAGES_COUNT * PAGE_SIZE)
+		return NULL;
+	if (size >= u_heap_free_space)
+		return NULL;
+
+	int pages_needed = size / PAGE_SIZE;
+	uint32 start_address = -1;
+	if (sys_isUHeapPlacementStrategyFIRSTFIT() == 1)
+	{
+		start_address = First_fit_Strategy(pages_needed);
+		if (start_address == -1)
+			return NULL;
+	}
+
+	sys_allocateMem(start_address, size);
+	u_heap_free_space -= size;
+	return (void *)start_address;
 }
 
 // free():
@@ -41,7 +88,7 @@ void* malloc(uint32 size)
 //		"memory_manager.c", then switch back to the user mode here
 //	the freeMem function is empty, make sure to implement it.
 
-void free(void* virtual_address)
+void free(void *virtual_address)
 {
 	//TODO: [FINAL_EVAL_2020 - VER_C] - [2] USER HEAP [User Side free]
 	// Write your code here, remove the panic and write your code
@@ -51,7 +98,6 @@ void free(void* virtual_address)
 
 	//refer to the documentation for details
 }
-
 
 //==================================================================================//
 //============================== BONUS FUNCTIONS ===================================//
@@ -79,24 +125,23 @@ void *realloc(void *virtual_address, uint32 new_size)
 	return 0;
 }
 
-
 //==================================================================================//
 //================================ OTHER FUNCTIONS =================================//
 //==================================================================================//
 
-void* smalloc(char *sharedVarName, uint32 size, uint8 isWritable)
+void *smalloc(char *sharedVarName, uint32 size, uint8 isWritable)
 {
 	panic("this function is not required...!!");
 	return 0;
 }
 
-void* sget(int32 ownerEnvID, char *sharedVarName)
+void *sget(int32 ownerEnvID, char *sharedVarName)
 {
 	panic("this function is not required...!!");
 	return 0;
 }
 
-void sfree(void* virtual_address)
+void sfree(void *virtual_address)
 {
 	panic("this function is not required...!!");
 }
@@ -110,7 +155,7 @@ void shrink(uint32 newSize)
 	panic("this function is not required...!!");
 }
 
-void freeHeap(void* virtual_address)
+void freeHeap(void *virtual_address)
 {
 	panic("this function is not required...!!");
 }
