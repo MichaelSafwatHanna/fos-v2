@@ -779,17 +779,74 @@ void allocateMem(struct Env *e, uint32 virtual_address, uint32 size)
 
 // [2] freeMem
 
-void freeMem(struct Env* e, uint32 virtual_address, uint32 size)
+void freeMem(struct Env *e, uint32 virtual_address, uint32 size)
 {
-	//TODO: [FINAL_EVAL_2020 - VER_C] - [2] USER HEAP [Kernel Side Free]
-	// Write your code here, remove the panic and write your code
-	panic("freeMem() is not implemented yet...!!");
+	virtual_address = ROUNDDOWN(virtual_address, PAGE_SIZE);
+	uint32 v_a = virtual_address;
+	int pages = size / PAGE_SIZE;
+	uint32 end_va = v_a + size;
 
-	//This function should:
-	//1. Free ALL pages of the given range from the Page File
-	//2. Free ONLY pages that are resident in the working set from the memory
-	//3. Removes ONLY the empty page tables (i.e. not used) (no pages are mapped in the table)
+	while (v_a != end_va)
+	{
+		uint32 *ptr_page_table = NULL;
+		get_page_table(e->env_page_directory, (void *)v_a, &ptr_page_table);
+		if (ptr_page_table == NULL)
+		{
+			v_a++;
+			continue;
+		}
 
+		struct Frame_Info *frame_info = NULL;
+		frame_info = get_frame_info(e->env_page_directory, (void *)v_a, &ptr_page_table);
+		if (frame_info == 0)
+		{
+			v_a++;
+			continue;
+		}
+
+		// Check working set
+		for (int i = 0; i < e->page_WS_max_size; i++)
+		{
+			if (e->ptr_pageWorkingSet[i].empty == 1)
+				continue;
+
+			if (e->ptr_pageWorkingSet[i].virtual_address == v_a)
+			{
+				uint32 mask = ptr_page_table[PTX(v_a)] & PERM_MODIFIED;
+				if (mask == PERM_MODIFIED)
+					pf_update_env_page(e, (void *)v_a, frame_info);
+
+				e->ptr_pageWorkingSet[i].virtual_address = 0;
+				e->ptr_pageWorkingSet[i].empty = 1;
+				unmap_frame(e->env_page_directory, (void *)v_a);
+			}
+		}
+
+		int has_pages = 0;
+		for (int i = 0; i < 1024; i++)
+		{
+			uint32 preset_mask = ptr_page_table[i] & PERM_PRESENT;
+			if (preset_mask == PERM_PRESENT)
+			{
+				has_pages = 1;
+				break;
+			}
+		}
+		if (has_pages == 0)
+		{
+			struct Frame_Info *pt_frame_info = get_frame_info(e->env_page_directory, (void *)ptr_page_table, &ptr_page_table);
+			free_frame(pt_frame_info);
+			e->env_page_directory[PTX(ptr_page_table)] = 0;
+		}
+
+		v_a++;
+	}
+
+	for (int i = 0; i < pages; i++)
+	{
+		pf_remove_env_page(e, virtual_address);
+		virtual_address += PAGE_SIZE;
+	}
 }
 
 void __freeMem_with_buffering(struct Env* e, uint32 virtual_address, uint32 size)

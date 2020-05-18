@@ -90,13 +90,15 @@ void *malloc(uint32 size)
 
 void free(void *virtual_address)
 {
-	//TODO: [FINAL_EVAL_2020 - VER_C] - [2] USER HEAP [User Side free]
-	// Write your code here, remove the panic and write your code
-	panic("free() is not implemented yet...!!");
-
-	//you should get the size of the given allocation using its address
-
-	//refer to the documentation for details
+	int start_index = (ROUNDDOWN((uint32)virtual_address, PAGE_SIZE) - USER_HEAP_START) / PAGE_SIZE;
+	int size = u_heap_pages[start_index];
+	int end_index = start_index + (size / PAGE_SIZE) - 1;
+	for (int i = start_index; i <= end_index; i++)
+	{
+		u_heap_pages[i] = 0;
+	}
+	u_heap_free_space += size;
+	sys_freeMem((uint32)virtual_address, size);
 }
 
 //==================================================================================//
