@@ -782,43 +782,43 @@ void allocateMem(struct Env *e, uint32 virtual_address, uint32 size)
 void freeMem(struct Env *e, uint32 virtual_address, uint32 size)
 {
 	virtual_address = ROUNDDOWN(virtual_address, PAGE_SIZE);
-	uint32 v_a = virtual_address;
+	uint32 v_a_ptr = virtual_address;
 	int pages = size / PAGE_SIZE;
-	uint32 end_va = v_a + size;
+	uint32 end_va = v_a_ptr + size;
 
-	while (v_a != end_va)
+	while (v_a_ptr != end_va)
 	{
 		uint32 *ptr_page_table = NULL;
-		get_page_table(e->env_page_directory, (void *)v_a, &ptr_page_table);
+		get_page_table(e->env_page_directory, (void *)v_a_ptr, &ptr_page_table);
 		if (ptr_page_table == NULL)
 		{
-			v_a++;
+			v_a_ptr += 4;
 			continue;
 		}
 
 		struct Frame_Info *frame_info = NULL;
-		frame_info = get_frame_info(e->env_page_directory, (void *)v_a, &ptr_page_table);
+		frame_info = get_frame_info(e->env_page_directory, (void *)v_a_ptr, &ptr_page_table);
 		if (frame_info == 0)
 		{
-			v_a++;
+			v_a_ptr += 4;
 			continue;
 		}
 
-		// Check working set
+		// Check if address belongs to working set
 		for (int i = 0; i < e->page_WS_max_size; i++)
 		{
 			if (e->ptr_pageWorkingSet[i].empty == 1)
 				continue;
 
-			if (e->ptr_pageWorkingSet[i].virtual_address == v_a)
+			if (e->ptr_pageWorkingSet[i].virtual_address == v_a_ptr)
 			{
-				uint32 mask = ptr_page_table[PTX(v_a)] & PERM_MODIFIED;
-				if (mask == PERM_MODIFIED)
-					pf_update_env_page(e, (void *)v_a, frame_info);
+				uint32 mod_mask = ptr_page_table[PTX(v_a_ptr)] & PERM_MODIFIED;
+				if (mod_mask == PERM_MODIFIED)
+					pf_update_env_page(e, (void *)v_a_ptr, frame_info);
 
 				e->ptr_pageWorkingSet[i].virtual_address = 0;
 				e->ptr_pageWorkingSet[i].empty = 1;
-				unmap_frame(e->env_page_directory, (void *)v_a);
+				unmap_frame(e->env_page_directory, (void *)v_a_ptr);
 			}
 		}
 
@@ -832,6 +832,8 @@ void freeMem(struct Env *e, uint32 virtual_address, uint32 size)
 				break;
 			}
 		}
+
+		// Delete Empty Page Table
 		if (has_pages == 0)
 		{
 			struct Frame_Info *pt_frame_info = get_frame_info(e->env_page_directory, (void *)ptr_page_table, &ptr_page_table);
@@ -839,13 +841,15 @@ void freeMem(struct Env *e, uint32 virtual_address, uint32 size)
 			e->env_page_directory[PTX(ptr_page_table)] = 0;
 		}
 
-		v_a++;
+		v_a_ptr += 4;
 	}
 
+	// Delete Pages From Page File
+	v_a_ptr = virtual_address;
 	for (int i = 0; i < pages; i++)
 	{
-		pf_remove_env_page(e, virtual_address);
-		virtual_address += PAGE_SIZE;
+		pf_remove_env_page(e, v_a_ptr);
+		v_a_ptr += PAGE_SIZE;
 	}
 }
 
