@@ -23,30 +23,33 @@ uint32 u_heap_free_space = HEAP_PAGES_COUNT * PAGE_SIZE;
 uint32 First_fit_Strategy(int pages_needed)
 {
 	int start_index = -1;
-	int end_index = 0;
-	int is_free = 0;
+	int end_index = -1;
+	int is_free = -1;
 
 	for (int i = 0; i < HEAP_PAGES_COUNT; i++)
 	{
 		if (u_heap_pages[i] == 0)
 		{
-			if (is_free == 0)
+			if (is_free <= 0)
 				start_index = i;
 			is_free = 1;
-			if (pages_needed == ((i - start_index) + 1))
-			{
-				end_index = i;
-				break;
-			}
 		}
 		else
 		{
 			is_free = 0;
 		}
+
+		if (pages_needed == ((i - start_index) + 1) && is_free == 1)
+		{
+			end_index = i;
+			break;
+		}
 	}
 
-	if (is_free == 0)
-		return -1; // No Free Memory
+	if (pages_needed != (end_index - start_index) + 1 || is_free <= 0)
+	{
+		return -1; // No Suitable Free Memory Block
+	}
 
 	for (int i = start_index; i <= end_index; i++)
 	{
@@ -92,8 +95,8 @@ uint32 Best_fit_strategy(int pages_needed)
 		min_start_index = start_index_pointer;
 	}
 
-	if (is_free == -1)
-		return -1; // No Free Memory
+	if (is_free <= 0)
+		return -1; // No Suitable Free Memory Block
 
 	int end_index = min_start_index + pages_needed - 1;
 
@@ -108,9 +111,7 @@ uint32 Best_fit_strategy(int pages_needed)
 void *malloc(uint32 size)
 {
 	size = ROUNDUP(size, PAGE_SIZE);
-	if (size >= HEAP_PAGES_COUNT * PAGE_SIZE)
-		return NULL;
-	if (size >= u_heap_free_space)
+	if (size >= HEAP_PAGES_COUNT * PAGE_SIZE || size >= u_heap_free_space)
 		return NULL;
 
 	int pages_needed = size / PAGE_SIZE;
@@ -118,19 +119,18 @@ void *malloc(uint32 size)
 	if (sys_isUHeapPlacementStrategyFIRSTFIT() == 1)
 	{
 		start_address = First_fit_Strategy(pages_needed);
-		if (start_address == -1)
-			return NULL;
 	}
 	else if (sys_isUHeapPlacementStrategyBESTFIT() == 1)
 	{
 		start_address = Best_fit_strategy(pages_needed);
-		if (start_address == -1)
-			return NULL;
 	}
+
+	if (start_address == -1)
+		return NULL;
 
 	u_heap_free_space -= size;
 	sys_allocateMem(start_address, size);
-	
+
 	return (void *)start_address;
 }
 
